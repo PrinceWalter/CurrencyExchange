@@ -5,16 +5,20 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.Date
 import javax.inject.Inject
 import com.example.currencyexchange.data.repository.*
 import com.example.currencyexchange.data.dao.PartnerSummary
+import com.example.currencyexchange.data.backup.*
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val partnerRepository: PartnerRepository,
     private val transactionRepository: TransactionRepository,
-    private val exchangeRateRepository: ExchangeRateRepository
+    private val exchangeRateRepository: ExchangeRateRepository,
+    private val backupRepository: BackupRepository
 ) : ViewModel() {
 
     val partners = partnerRepository.getAllActivePartners()
@@ -70,7 +74,7 @@ class MainViewModel @Inject constructor(
     suspend fun getDefaultExchangeRates() = exchangeRateRepository.getAllDefaultRates()
 
     suspend fun getCumulativeNetPositions(): PartnerSummary {
-        val currentPartners = partners.first() // Get current partners list
+        val currentPartners = partners.first()
 
         if (currentPartners.isEmpty()) {
             return PartnerSummary(
@@ -86,7 +90,6 @@ class MainViewModel @Inject constructor(
         var cumulativeUsdt = 0.0
         var cumulativeTransactions = 0
 
-        // Sum up all partner summaries
         currentPartners.forEach { partner ->
             try {
                 val summary = partnerRepository.getPartnerSummary(partner.id)
@@ -105,5 +108,26 @@ class MainViewModel @Inject constructor(
             totalNetUsdt = cumulativeUsdt,
             transactionCount = cumulativeTransactions
         )
+    }
+
+    // Backup and Restore Functions
+    suspend fun createBackup(): BackupData {
+        return backupRepository.createBackup()
+    }
+
+    fun exportBackupToFile(backupData: BackupData, outputStream: FileOutputStream): Boolean {
+        return backupRepository.exportBackupToFile(backupData, outputStream)
+    }
+
+    fun parseBackupFromFile(inputStream: InputStream): BackupData? {
+        return backupRepository.parseBackupFromFile(inputStream)
+    }
+
+    suspend fun restoreBackup(backupData: BackupData): RestoreResult {
+        return backupRepository.restoreBackup(backupData)
+    }
+
+    fun generateBackupFileName(): String {
+        return backupRepository.generateBackupFileName()
     }
 }

@@ -9,6 +9,7 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 import com.example.currencyexchange.data.database.CurrencyExchangeDatabase
 import com.example.currencyexchange.data.dao.*
+import com.example.currencyexchange.data.repository.*
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -33,5 +34,15 @@ object DatabaseModule {
     @Provides
     fun provideExchangeRateDao(database: CurrencyExchangeDatabase): ExchangeRateDao {
         return database.exchangeRateDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideBackupRepository(
+        partnerRepository: PartnerRepository,
+        transactionRepository: TransactionRepository,
+        exchangeRateRepository: ExchangeRateRepository
+    ): BackupRepository {
+        return BackupRepository(partnerRepository, transactionRepository, exchangeRateRepository)
     }
 }

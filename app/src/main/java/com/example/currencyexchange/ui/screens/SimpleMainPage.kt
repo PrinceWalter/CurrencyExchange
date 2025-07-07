@@ -1,5 +1,7 @@
 package com.example.currencyexchange.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -11,14 +13,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 import com.example.currencyexchange.viewmodel.MainViewModel
 import com.example.currencyexchange.data.dao.PartnerSummary
+import com.example.currencyexchange.data.backup.RestoreResult
 import com.example.currencyexchange.ui.components.NetPositionItem
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,6 +48,84 @@ fun SimpleMainPage(
     var newPartnerName by remember { mutableStateOf("") }
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
+
+    // Backup and Restore UI state
+    var showBackupDialog by remember { mutableStateOf(false) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
+    var showRestoreResultDialog by remember { mutableStateOf(false) }
+    var isCreatingBackup by remember { mutableStateOf(false) }
+    var isRestoringBackup by remember { mutableStateOf(false) }
+    var restoreResult by remember { mutableStateOf<RestoreResult?>(null) }
+    var backupMessage by remember { mutableStateOf("") }
+
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    // File picker for backup export
+    val backupExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let {
+            coroutineScope.launch {
+                isCreatingBackup = true
+                try {
+                    val backupData = viewModel.createBackup()
+                    val outputStream = context.contentResolver.openOutputStream(uri)
+                    if (outputStream != null) {
+                        val success = viewModel.exportBackupToFile(backupData, outputStream as java.io.FileOutputStream)
+                        backupMessage = if (success) {
+                            "Backup exported successfully!\n\nPartners: ${backupData.partners.size}\nTransactions: ${backupData.transactions.size}"
+                        } else {
+                            "Failed to export backup. Please try again."
+                        }
+                        showBackupDialog = true
+                    }
+                } catch (e: Exception) {
+                    backupMessage = "Error creating backup: ${e.message}"
+                    showBackupDialog = true
+                } finally {
+                    isCreatingBackup = false
+                }
+            }
+        }
+    }
+
+    // File picker for backup import
+    val backupImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            coroutineScope.launch {
+                isRestoringBackup = true
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    if (inputStream != null) {
+                        val backupData = viewModel.parseBackupFromFile(inputStream)
+                        if (backupData != null) {
+                            restoreResult = viewModel.restoreBackup(backupData)
+                            showRestoreResultDialog = true
+                        } else {
+                            restoreResult = RestoreResult(
+                                success = false,
+                                message = "Invalid backup file format",
+                                errors = listOf("Could not parse the backup file")
+                            )
+                            showRestoreResultDialog = true
+                        }
+                    }
+                } catch (e: Exception) {
+                    restoreResult = RestoreResult(
+                        success = false,
+                        message = "Error reading backup file: ${e.message}",
+                        errors = listOf(e.message ?: "Unknown error")
+                    )
+                    showRestoreResultDialog = true
+                } finally {
+                    isRestoringBackup = false
+                }
+            }
+        }
+    }
 
     // Date range states
     var startDate by remember { mutableStateOf(Date(System.currentTimeMillis() - (30 * 24 * 60 * 60 * 1000))) }
@@ -256,6 +339,141 @@ fun SimpleMainPage(
                     Icons.Filled.Check,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        )
+    }
+
+    // Backup Export Dialog
+    if (showBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackupDialog = false },
+            title = { Text("Backup Status") },
+            text = { Text(backupMessage) },
+            confirmButton = {
+                TextButton(onClick = { showBackupDialog = false }) {
+                    Text("OK")
+                }
+            },
+            icon = {
+                Icon(
+                    if (backupMessage.contains("successfully")) Icons.Filled.Check else Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = if (backupMessage.contains("successfully"))
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.error
+                )
+            }
+        )
+    }
+
+    // Restore Confirmation Dialog
+    if (showRestoreDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreDialog = false },
+            title = { Text("Restore Backup") },
+            text = {
+                Column {
+                    Text("⚠️ Important Information:")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("• This will merge backup data with existing data")
+                    Text("• Duplicate transactions will be skipped")
+                    Text("• Partners with same names will be merged")
+                    Text("• Existing data will NOT be deleted")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Select a backup file to restore from.")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRestoreDialog = false
+                        backupImportLauncher.launch(arrayOf("application/json", "*/*"))
+                    }
+                ) {
+                    Text("Choose Backup File")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            icon = {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        )
+    }
+
+    // Restore Result Dialog
+    if (showRestoreResultDialog && restoreResult != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showRestoreResultDialog = false
+                restoreResult = null
+            },
+            title = {
+                Text(if (restoreResult!!.success) "Restore Successful" else "Restore Failed")
+            },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 400.dp)
+                ) {
+                    item {
+                        Text(
+                            text = restoreResult!!.message,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        if (restoreResult!!.success) {
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text("📊 Restore Summary:", fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text("✅ Partners Added: ${restoreResult!!.partnersAdded}")
+                            Text("🔄 Partners Updated: ${restoreResult!!.partnersUpdated}")
+                            Text("✅ Transactions Added: ${restoreResult!!.transactionsAdded}")
+                            Text("⏭️ Transactions Skipped: ${restoreResult!!.transactionsSkipped}")
+                            Text("💱 Exchange Rates Added: ${restoreResult!!.exchangeRatesAdded}")
+                            Text("💱 Exchange Rates Updated: ${restoreResult!!.exchangeRatesUpdated}")
+                        }
+
+                        if (restoreResult!!.errors.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("⚠️ Warnings/Errors:", fontWeight = FontWeight.SemiBold)
+                            restoreResult!!.errors.forEach { error ->
+                                Text(
+                                    text = "• $error",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestoreResultDialog = false
+                    restoreResult = null
+                }) {
+                    Text("OK")
+                }
+            },
+            icon = {
+                Icon(
+                    if (restoreResult!!.success) Icons.Filled.Check else Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = if (restoreResult!!.success)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.error
                 )
             }
         )
@@ -649,6 +867,59 @@ fun SimpleMainPage(
                             //   Icon(Icons.Filled.CloudUpload, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Save All Data Online")
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Backup and Restore section
+                        Text(
+                            text = "Backup & Restore",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Export Backup
+                        Button(
+                            onClick = {
+                                val fileName = viewModel.generateBackupFileName()
+                                backupExportLauncher.launch(fileName)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isCreatingBackup
+                        ) {
+                            if (isCreatingBackup) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Filled.Check, contentDescription = null)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(if (isCreatingBackup) "Creating Backup..." else "Export Backup")
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Import Backup
+                        OutlinedButton(
+                            onClick = { showRestoreDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isRestoringBackup
+                        ) {
+                            if (isRestoringBackup) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Filled.Add, contentDescription = null)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(if (isRestoringBackup) "Restoring..." else "Import Backup")
                         }
 
                         if (selectedPartnerId == 0L) {
