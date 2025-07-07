@@ -3,6 +3,8 @@ package com.example.currencyexchange.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -17,7 +19,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import com.example.currencyexchange.viewmodel.MainViewModel
 import com.example.currencyexchange.data.dao.PartnerSummary
-import com.example.currencyexchange.ui.components.NetPositionItem // Import the shared component
+import com.example.currencyexchange.ui.components.NetPositionItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -331,13 +333,89 @@ fun SimpleMainPage(
                     IconButton(
                         onClick = { showSaveDialog = true }
                     ) {
-                       // Icon(Icons.Filled.CloudUpload, contentDescription = "Save Online")
+                        // Icon(Icons.Filled.CloudUpload, contentDescription = "Save Online")
                     }
                 }
             )
 
+            // Compact Cumulative Net Positions at the top
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 8.dp)
+            ) {
+                var cumulativeSummary by remember { mutableStateOf<PartnerSummary?>(null) }
+                var isLoadingCumulative by remember { mutableStateOf(false) }
+
+                // Load cumulative summary when partners change
+                LaunchedEffect(partners) {
+                    if (partners.isNotEmpty()) {
+                        isLoadingCumulative = true
+                        try {
+                            cumulativeSummary = viewModel.getCumulativeNetPositions()
+                        } catch (e: Exception) {
+                            // Handle error silently
+                        } finally {
+                            isLoadingCumulative = false
+                        }
+                    } else {
+                        cumulativeSummary = null
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Net Positions:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+
+                    if (isLoadingCumulative) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    } else if (cumulativeSummary != null) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CompactNetItem("TZS", cumulativeSummary!!.totalNetTzs)
+                            CompactNetItem("CNY", cumulativeSummary!!.totalNetCny)
+                            CompactNetItem("USDT", cumulativeSummary!!.totalNetUsdt)
+                        }
+                    } else if (partners.isEmpty()) {
+                        Text(
+                            text = "Add partners to see positions",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                    } else {
+                        Text(
+                            text = "No transactions yet",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Partner Management Section
@@ -568,7 +646,7 @@ fun SimpleMainPage(
                             onClick = { showSaveDialog = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                         //   Icon(Icons.Filled.CloudUpload, contentDescription = null)
+                            //   Icon(Icons.Filled.CloudUpload, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Save All Data Online")
                         }
@@ -619,6 +697,35 @@ fun SimpleMainPage(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CompactNetItem(
+    currency: String,
+    amount: Double,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier
+    ) {
+        Text(
+            text = currency,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+        )
+        Text(
+            text = formatNumberWithCommas(amount),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            color = if (amount >= 0)
+                MaterialTheme.colorScheme.primary
+            else
+                MaterialTheme.colorScheme.error
+        )
     }
 }
 
@@ -784,4 +891,20 @@ private fun getMaxDayOfMonth(year: Int, month: Int): Int {
     val calendar = java.util.Calendar.getInstance()
     calendar.set(year, month, 1)
     return calendar.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+}
+
+private fun formatNumber(number: Double): String {
+    return String.format("%.2f", number)
+}
+
+private fun formatNumberWithCommas(number: Double): String {
+    val formatted = String.format("%.2f", number)
+    val parts = formatted.split(".")
+    val integerPart = parts[0]
+    val decimalPart = if (parts.size > 1) parts[1] else "00"
+
+    // Add commas to integer part
+    val formattedInteger = integerPart.reversed().chunked(3).joinToString(",").reversed()
+
+    return "$formattedInteger.$decimalPart"
 }

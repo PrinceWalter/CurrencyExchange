@@ -68,4 +68,42 @@ class MainViewModel @Inject constructor(
     ) = transactionRepository.getPartnerSummaryByDateRange(partnerId, startDate, endDate)
 
     suspend fun getDefaultExchangeRates() = exchangeRateRepository.getAllDefaultRates()
+
+    suspend fun getCumulativeNetPositions(): PartnerSummary {
+        val currentPartners = partners.first() // Get current partners list
+
+        if (currentPartners.isEmpty()) {
+            return PartnerSummary(
+                totalNetTzs = 0.0,
+                totalNetCny = 0.0,
+                totalNetUsdt = 0.0,
+                transactionCount = 0
+            )
+        }
+
+        var cumulativeTzs = 0.0
+        var cumulativeCny = 0.0
+        var cumulativeUsdt = 0.0
+        var cumulativeTransactions = 0
+
+        // Sum up all partner summaries
+        currentPartners.forEach { partner ->
+            try {
+                val summary = partnerRepository.getPartnerSummary(partner.id)
+                cumulativeTzs += summary.totalNetTzs
+                cumulativeCny += summary.totalNetCny
+                cumulativeUsdt += summary.totalNetUsdt
+                cumulativeTransactions += summary.transactionCount
+            } catch (e: Exception) {
+                // Skip partners with no transactions or errors
+            }
+        }
+
+        return PartnerSummary(
+            totalNetTzs = cumulativeTzs,
+            totalNetCny = cumulativeCny,
+            totalNetUsdt = cumulativeUsdt,
+            transactionCount = cumulativeTransactions
+        )
+    }
 }

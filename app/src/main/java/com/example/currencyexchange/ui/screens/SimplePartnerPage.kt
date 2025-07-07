@@ -1,5 +1,7 @@
 package com.example.currencyexchange.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -13,8 +15,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -24,6 +29,16 @@ import com.example.currencyexchange.data.dao.PartnerSummary
 import com.example.currencyexchange.ui.components.NetPositionItem
 import java.text.SimpleDateFormat
 import java.util.*
+
+// Data class for table rows
+data class TransactionRow(
+    val id: String = UUID.randomUUID().toString(),
+    var tzs: String = "",
+    var foreignAmount: String = "",
+    var currency: String = "CNY",
+    var rate: String = "",
+    var notes: String = ""
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,14 +57,9 @@ fun SimplePartnerPage(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val successMessage by viewModel.successMessage.collectAsState()
 
-    // UI state for transaction creation
+    // Table state
+    var transactionRows by remember { mutableStateOf(listOf(TransactionRow())) }
     var selectedDate by remember { mutableStateOf(Date()) }
-    var tzsReceived by remember { mutableStateOf("") }
-    var foreignGiven by remember { mutableStateOf("") }
-    var selectedCurrency by remember { mutableStateOf("CNY") }
-    var exchangeRate by remember { mutableStateOf(defaultCnyRate) }
-    var transactionNotes by remember { mutableStateOf("") }
-
     var showTransactionsList by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -76,50 +86,87 @@ fun SimplePartnerPage(
         }
     }
 
-    // Update exchange rate when currency changes
-    LaunchedEffect(selectedCurrency, defaultCnyRate, defaultUsdtRate) {
-        exchangeRate = when (selectedCurrency) {
-            "CNY" -> defaultCnyRate
-            "USDT" -> defaultUsdtRate
-            else -> defaultCnyRate
-        }
-    }
-
     val partnerName = partner?.name ?: "Loading..."
 
-    // Helper function to validate inputs
-    fun validateInputs(): Boolean {
-        if (tzsReceived.isBlank()) {
-            return false
-        }
-        if (foreignGiven.isBlank()) {
-            return false
-        }
-        if (exchangeRate.isBlank()) {
-            return false
-        }
-        if (tzsReceived.toDoubleOrNull() == null || tzsReceived.toDouble() <= 0) {
-            return false
-        }
-        if (foreignGiven.toDoubleOrNull() == null || foreignGiven.toDouble() <= 0) {
-            return false
-        }
-        if (exchangeRate.toDoubleOrNull() == null || exchangeRate.toDouble() <= 0) {
-            return false
-        }
-        return true
+    // Helper function to add a new row
+    fun addNewRow() {
+        transactionRows = transactionRows + TransactionRow()
     }
 
-    // Helper function to clear inputs
-    fun clearInputs() {
-        tzsReceived = ""
-        foreignGiven = ""
-        transactionNotes = ""
-        exchangeRate = when (selectedCurrency) {
-            "CNY" -> defaultCnyRate
-            "USDT" -> defaultUsdtRate
-            else -> defaultCnyRate
+    // Helper function to remove a row
+    fun removeRow(rowId: String) {
+        if (transactionRows.size > 1) {
+            transactionRows = transactionRows.filter { it.id != rowId }
         }
+    }
+
+    // Helper function to update row
+    fun updateRow(rowId: String, updatedRow: TransactionRow) {
+        transactionRows = transactionRows.map { if (it.id == rowId) updatedRow else it }
+    }
+
+    // Helper function to format number with commas
+    fun formatWithCommas(number: String): String {
+        if (number.isBlank()) return ""
+
+        // Remove existing commas and non-numeric characters except dots
+        val cleanNumber = number.replace(",", "").filter { it.isDigit() || it == '.' }
+
+        if (cleanNumber.isBlank()) return ""
+
+        // Split by decimal point if exists
+        val parts = cleanNumber.split(".")
+        val integerPart = parts[0]
+        val decimalPart = if (parts.size > 1) parts[1] else ""
+
+        // Add commas to integer part
+        val formattedInteger = integerPart.reversed().chunked(3).joinToString(",").reversed()
+
+        return if (decimalPart.isNotEmpty()) "$formattedInteger.$decimalPart" else formattedInteger
+    }
+
+    // Helper function to remove commas for parsing
+    fun removeCommas(number: String): String {
+        return number.replace(",", "")
+    }
+
+    // Helper function to validate and save transactions
+    fun saveTransactions() {
+        val validRows = transactionRows.filter { row ->
+            // Valid if at least one field has a value
+            val hasTzs = row.tzs.isNotBlank()
+            val hasForeignAmount = row.foreignAmount.isNotBlank()
+            val hasRate = row.rate.isNotBlank()
+
+            hasTzs || hasForeignAmount || hasRate
+        }
+
+        if (validRows.isEmpty()) {
+            // Show error - no valid rows
+            return
+        }
+
+        validRows.forEach { row ->
+            val tzs = removeCommas(row.tzs).toDoubleOrNull() ?: 0.0
+            val foreignAmount = removeCommas(row.foreignAmount).toDoubleOrNull() ?: 0.0
+            val rate = row.rate.toDoubleOrNull() ?: when (row.currency) {
+                "CNY" -> defaultCnyRate.toDoubleOrNull() ?: 376.0
+                "USDT" -> defaultUsdtRate.toDoubleOrNull() ?: 2380.0
+                else -> 376.0
+            }
+
+            viewModel.saveTransaction(
+                date = selectedDate,
+                tzsReceived = tzs,
+                foreignGiven = foreignAmount,
+                foreignCurrency = row.currency,
+                exchangeRate = rate,
+                notes = row.notes
+            )
+        }
+
+        // Clear the table after saving
+        transactionRows = listOf(TransactionRow())
     }
 
     // Date Picker Dialog
@@ -419,14 +466,14 @@ fun SimplePartnerPage(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Net Positions Summary
+                // Overall Net Positions Summary
                 partnerSummary?.let { summary ->
                     Card {
                         Column(
                             modifier = Modifier.padding(16.dp)
                         ) {
                             Text(
-                                text = "Net Positions",
+                                text = "Overall Net Positions",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
@@ -451,25 +498,7 @@ fun SimplePartnerPage(
                     }
                 }
 
-                // Transactions List
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "All Transactions",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    Text(
-                        text = "${transactions.size} transactions",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
+                // Transactions by Date
                 if (transactions.isEmpty()) {
                     Card {
                         Column(
@@ -498,33 +527,39 @@ fun SimplePartnerPage(
                         }
                     }
                 } else {
+                    // Group transactions by date
+                    val groupedTransactions = transactions.groupBy {
+                        SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(it.date)
+                    }.toSortedMap(compareByDescending {
+                        SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).parse(it)
+                    })
+
                     LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        itemsIndexed(transactions) { _, transaction ->
-                            TransactionCard(
-                                transaction = transaction,
-                                onEdit = {
-                                    editingTransaction = transaction
-                                    editTzsReceived = transaction.tzsReceived.toString()
-                                    editForeignAmount = transaction.foreignGiven.toString()
-                                    editForeignCurrency = transaction.foreignCurrency
-                                    editExchangeRate = transaction.exchangeRate.toString()
-                                    editNotes = transaction.notes
-                                    showEditDialog = true
-                                },
-                                onDelete = {
-                                    deletingTransaction = transaction
-                                    showDeleteDialog = true
-                                }
-                            )
+                        groupedTransactions.forEach { (dateString, dayTransactions) ->
+                            item {
+                                TransactionDateGroup(
+                                    dateString = dateString,
+                                    transactions = dayTransactions,
+                                    onUpdateTransaction = { transaction ->
+                                        viewModel.updateTransaction(transaction)
+                                    },
+                                    onDeleteTransaction = { transaction ->
+                                        deletingTransaction = transaction
+                                        showDeleteDialog = true
+                                    },
+                                    formatWithCommas = ::formatWithCommas,
+                                    removeCommas = ::removeCommas
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     } else {
-        // Main transaction entry view
+        // Main transaction entry view with table
         Column(
             modifier = modifier
                 .fillMaxSize()
@@ -626,137 +661,191 @@ fun SimplePartnerPage(
                     }
                 }
 
-                // Transaction Entry Section
+                // Transaction Table Section
                 Card {
                     Column(
                         modifier = Modifier.padding(16.dp)
                     ) {
-                        Text(
-                            text = "Add New Transaction",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // TZS Received
-                        OutlinedTextField(
-                            value = tzsReceived,
-                            onValueChange = { tzsReceived = it },
-                            label = { Text("TZS Received") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Foreign Currency and Rate
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            OutlinedTextField(
-                                value = foreignGiven,
-                                onValueChange = { foreignGiven = it },
-                                label = { Text("$selectedCurrency Given") },
-                                modifier = Modifier.weight(2f),
-                                singleLine = true
+                            Text(
+                                text = "Add New Transactions",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
                             )
 
-                            OutlinedTextField(
-                                value = exchangeRate,
-                                onValueChange = { exchangeRate = it },
-                                label = { Text("Rate") },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true
-                            )
+                            OutlinedButton(
+                                onClick = { addNewRow() }
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Row")
+                            }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                        // Currency Selection
+                        // Table Header
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .border(1.dp, MaterialTheme.colorScheme.outline)
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "TZS",
+                                modifier = Modifier.weight(2f), // Largest column
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "CNY/USDT",
+                                modifier = Modifier.weight(1.5f), // Medium column
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "RATE",
+                                modifier = Modifier.weight(1f), // Smallest column
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Spacer(modifier = Modifier.width(40.dp)) // Space for delete button
+                        }
+
+                        // Table Rows
+                        transactionRows.forEachIndexed { index, row ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, MaterialTheme.colorScheme.outline)
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // TZS Column (Largest)
+                                OutlinedTextField(
+                                    value = row.tzs,
+                                    onValueChange = { newValue ->
+                                        val formattedValue = formatWithCommas(newValue)
+                                        updateRow(row.id, row.copy(tzs = formattedValue))
+                                    },
+                                    placeholder = { Text("0") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(2f)
+                                )
+
+                                // CNY/USDT Column (Medium)
+                                Column(
+                                    modifier = Modifier.weight(1.5f)
+                                ) {
+                                    // Currency selector
+                                    var expanded by remember { mutableStateOf(false) }
+                                    ExposedDropdownMenuBox(
+                                        expanded = expanded,
+                                        onExpandedChange = { expanded = !expanded },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        OutlinedTextField(
+                                            value = row.currency,
+                                            onValueChange = { },
+                                            readOnly = true,
+                                            trailingIcon = {
+                                                ExposedDropdownMenuDefaults.TrailingIcon(
+                                                    expanded = expanded
+                                                )
+                                            },
+                                            modifier = Modifier
+                                                .menuAnchor()
+                                                .fillMaxWidth()
+                                        )
+                                        ExposedDropdownMenu(
+                                            expanded = expanded,
+                                            onDismissRequest = { expanded = false }
+                                        ) {
+                                            listOf("CNY", "USDT").forEach { currency ->
+                                                DropdownMenuItem(
+                                                    text = { Text(currency) },
+                                                    onClick = {
+                                                        updateRow(row.id, row.copy(currency = currency))
+                                                        expanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Amount field with comma formatting
+                                    OutlinedTextField(
+                                        value = row.foreignAmount,
+                                        onValueChange = { newValue ->
+                                            val formattedValue = formatWithCommas(newValue)
+                                            updateRow(row.id, row.copy(foreignAmount = formattedValue))
+                                        },
+                                        placeholder = { Text("0") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+
+                                // RATE Column (Smallest)
+                                OutlinedTextField(
+                                    value = row.rate,
+                                    onValueChange = {
+                                        updateRow(row.id, row.copy(rate = it))
+                                    },
+                                    placeholder = {
+                                        Text(if (row.currency == "CNY") defaultCnyRate else defaultUsdtRate)
+                                    },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                // Delete button
+                                IconButton(
+                                    onClick = { removeRow(row.id) },
+                                    enabled = transactionRows.size > 1
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = "Delete row",
+                                        tint = if (transactionRows.size > 1)
+                                            MaterialTheme.colorScheme.error
+                                        else
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        // Notes section for the current set of transactions
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Foreign Currency:",
+                            text = "Notes (applied to all transactions):",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
 
-                        Row(
-                            modifier = Modifier.selectableGroup(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            listOf("CNY", "USDT").forEach { currency ->
-                                Row(
-                                    modifier = Modifier.selectable(
-                                        selected = selectedCurrency == currency,
-                                        onClick = { selectedCurrency = currency },
-                                        role = Role.RadioButton
-                                    ),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = selectedCurrency == currency,
-                                        onClick = null
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(currency)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Notes
+                        var globalNotes by remember { mutableStateOf("") }
                         OutlinedTextField(
-                            value = transactionNotes,
-                            onValueChange = { transactionNotes = it },
-                            label = { Text("Notes (optional)") },
+                            value = globalNotes,
+                            onValueChange = {
+                                globalNotes = it
+                                // Update all rows with the same notes
+                                transactionRows = transactionRows.map { it.copy(notes = globalNotes) }
+                            },
+                            placeholder = { Text("Optional notes for all transactions...") },
                             modifier = Modifier.fillMaxWidth(),
                             maxLines = 3
                         )
-
-                        // Show calculated net values
-                        if (tzsReceived.isNotBlank() && foreignGiven.isNotBlank() && exchangeRate.isNotBlank()) {
-                            val tzs = tzsReceived.toDoubleOrNull() ?: 0.0
-                            val foreign = foreignGiven.toDoubleOrNull() ?: 0.0
-                            val rate = exchangeRate.toDoubleOrNull() ?: 0.0
-
-                            if (tzs > 0 && foreign > 0 && rate > 0) {
-                                val netTzs = tzs - (foreign * rate)
-                                val netForeign = netTzs / rate
-
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Card(
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                    )
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(12.dp)
-                                    ) {
-                                        Text(
-                                            text = "Calculated Net Values:",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                text = "Net TZS: ${formatNumber(netTzs)}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = if (netTzs >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                            )
-                                            Text(
-                                                text = "Net $selectedCurrency: ${formatNumber(netForeign)}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = if (netForeign >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -766,21 +855,11 @@ fun SimplePartnerPage(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = {
-                            if (validateInputs()) {
-                                viewModel.saveTransaction(
-                                    date = selectedDate,
-                                    tzsReceived = tzsReceived.toDouble(),
-                                    foreignGiven = foreignGiven.toDouble(),
-                                    foreignCurrency = selectedCurrency,
-                                    exchangeRate = exchangeRate.toDouble(),
-                                    notes = transactionNotes
-                                )
-                                clearInputs()
-                            }
-                        },
+                        onClick = { saveTransactions() },
                         modifier = Modifier.weight(1f),
-                        enabled = validateInputs() && !isLoading
+                        enabled = !isLoading && transactionRows.any { row ->
+                            row.tzs.isNotBlank() || row.foreignAmount.isNotBlank() || row.rate.isNotBlank()
+                        }
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(
@@ -791,7 +870,7 @@ fun SimplePartnerPage(
                             Icon(Icons.Filled.Check, contentDescription = null)
                         }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Save Transaction")
+                        Text("Save All Transactions")
                     }
 
                     OutlinedButton(
@@ -804,44 +883,41 @@ fun SimplePartnerPage(
                     }
                 }
 
-                // Validation hints
-                if (!validateInputs() && (tzsReceived.isNotBlank() || foreignGiven.isNotBlank() || exchangeRate.isNotBlank())) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                        )
+                // Helper text
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp)
-                        ) {
-                            Text(
-                                text = "⚠️ Please check your inputs:",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            if (tzsReceived.isBlank() || tzsReceived.toDoubleOrNull() == null || tzsReceived.toDouble() <= 0) {
-                                Text(
-                                    text = "• TZS Received must be a positive number",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-                            if (foreignGiven.isBlank() || foreignGiven.toDoubleOrNull() == null || foreignGiven.toDouble() <= 0) {
-                                Text(
-                                    text = "• Foreign amount must be a positive number",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-                            if (exchangeRate.isBlank() || exchangeRate.toDoubleOrNull() == null || exchangeRate.toDouble() <= 0) {
-                                Text(
-                                    text = "• Exchange rate must be a positive number",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
+                        Text(
+                            text = "💡 How to use:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "• Fill any column to create a transaction record",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "• Empty fields will be saved as zero (no automatic calculations)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "• TZS and CNY/USDT amounts support comma formatting",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "• Empty RATE fields will use default rates",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -849,94 +925,369 @@ fun SimplePartnerPage(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TransactionCard(
-    transaction: TransactionEntity,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
+private fun TransactionDateGroup(
+    dateString: String,
+    transactions: List<TransactionEntity>,
+    onUpdateTransaction: (TransactionEntity) -> Unit,
+    onDeleteTransaction: (TransactionEntity) -> Unit,
+    formatWithCommas: (String) -> String,
+    removeCommas: (String) -> String
 ) {
-    Card {
+    var editingTransactionId by remember { mutableStateOf<Long?>(null) }
+    var editingValues by remember { mutableStateOf(mapOf<Long, EditableTransactionData>()) }
+
+    // Calculate net positions for this date
+    val dateTzs = transactions.sumOf { it.netTzs }
+    val dateCny = transactions.filter { it.foreignCurrency == "CNY" }.sumOf { it.netForeign }
+    val dateUsdt = transactions.filter { it.foreignCurrency == "USDT" }.sumOf { it.netForeign }
+
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            // Header with date and action buttons
+            // Date Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(transaction.date),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
+                    text = dateString,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
                 )
+                Text(
+                    text = "${transactions.size} transactions",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
-                Row {
-                    // Edit Button
-                    IconButton(onClick = onEdit) {
-                        Icon(
-                            Icons.Filled.Edit,
-                            contentDescription = "Edit",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Table Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .border(1.dp, MaterialTheme.colorScheme.outline)
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "TZS",
+                    modifier = Modifier.weight(2f),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "CNY/USDT",
+                    modifier = Modifier.weight(1.5f),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "RATE",
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "NET TZS",
+                    modifier = Modifier.weight(1.5f),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.width(80.dp)) // Space for action buttons
+            }
+
+            // Transaction Rows
+            transactions.forEach { transaction ->
+                val isEditing = editingTransactionId == transaction.id
+                val editData = editingValues[transaction.id]
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, MaterialTheme.colorScheme.outline)
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isEditing && editData != null) {
+                        // Editable TZS field
+                        OutlinedTextField(
+                            value = editData.tzs,
+                            onValueChange = { newValue ->
+                                val formattedValue = formatWithCommas(newValue)
+                                editingValues = editingValues + (transaction.id to editData.copy(tzs = formattedValue))
+                            },
+                            singleLine = true,
+                            modifier = Modifier.weight(2f),
+                            textStyle = MaterialTheme.typography.bodySmall
                         )
-                    }
 
-                    // Delete Button
-                    IconButton(onClick = onDelete) {
-                        Icon(
-                            Icons.Filled.Delete,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(20.dp)
+                        // Editable Currency/Amount
+                        Column(
+                            modifier = Modifier.weight(1.5f)
+                        ) {
+                            var expanded by remember { mutableStateOf(false) }
+                            ExposedDropdownMenuBox(
+                                expanded = expanded,
+                                onExpandedChange = { expanded = !expanded },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = editData.currency,
+                                    onValueChange = { },
+                                    readOnly = true,
+                                    trailingIcon = {
+                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                                    },
+                                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                    textStyle = MaterialTheme.typography.bodySmall
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = expanded,
+                                    onDismissRequest = { expanded = false }
+                                ) {
+                                    listOf("CNY", "USDT").forEach { currency ->
+                                        DropdownMenuItem(
+                                            text = { Text(currency, style = MaterialTheme.typography.bodySmall) },
+                                            onClick = {
+                                                editingValues = editingValues + (transaction.id to editData.copy(currency = currency))
+                                                expanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = editData.foreignAmount,
+                                onValueChange = { newValue ->
+                                    val formattedValue = formatWithCommas(newValue)
+                                    editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = formattedValue))
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        // Editable Rate
+                        OutlinedTextField(
+                            value = editData.rate,
+                            onValueChange = { newValue ->
+                                editingValues = editingValues + (transaction.id to editData.copy(rate = newValue))
+                            },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            textStyle = MaterialTheme.typography.bodySmall
+                        )
+
+                        // Net TZS (calculated)
+                        val calculatedNetTzs = (removeCommas(editData.tzs).toDoubleOrNull() ?: 0.0) -
+                                ((removeCommas(editData.foreignAmount).toDoubleOrNull() ?: 0.0) * (editData.rate.toDoubleOrNull() ?: 0.0))
+
+                        Text(
+                            text = formatNumber(calculatedNetTzs),
+                            modifier = Modifier.weight(1.5f),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (calculatedNetTzs >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+
+                        // Action Buttons (Save/Cancel)
+                        Row {
+                            IconButton(
+                                onClick = {
+                                    // Save changes
+                                    val updatedTransaction = transaction.copy(
+                                        tzsReceived = removeCommas(editData.tzs).toDoubleOrNull() ?: 0.0,
+                                        foreignGiven = removeCommas(editData.foreignAmount).toDoubleOrNull() ?: 0.0,
+                                        foreignCurrency = editData.currency,
+                                        exchangeRate = editData.rate.toDoubleOrNull() ?: 0.0,
+                                        notes = editData.notes,
+                                        lastModified = Date()
+                                    )
+                                    onUpdateTransaction(updatedTransaction)
+                                    editingTransactionId = null
+                                    editingValues = editingValues - transaction.id
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Filled.Check,
+                                    contentDescription = "Save",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    // Cancel editing
+                                    editingTransactionId = null
+                                    editingValues = editingValues - transaction.id
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "Cancel",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        // Display mode
+                        Text(
+                            text = formatWithCommas(transaction.tzsReceived.toLong().toString()),
+                            modifier = Modifier.weight(2f),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        Column(
+                            modifier = Modifier.weight(1.5f),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = transaction.foreignCurrency,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = formatWithCommas(transaction.foreignGiven.toLong().toString()),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        Text(
+                            text = formatNumber(transaction.exchangeRate),
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        Text(
+                            text = formatNumber(transaction.netTzs),
+                            modifier = Modifier.weight(1.5f),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (transaction.netTzs >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+
+                        // Action Buttons (Edit/Delete)
+                        Row {
+                            IconButton(
+                                onClick = {
+                                    // Start editing
+                                    editingTransactionId = transaction.id
+                                    editingValues = editingValues + (transaction.id to EditableTransactionData(
+                                        tzs = formatWithCommas(transaction.tzsReceived.toLong().toString()),
+                                        foreignAmount = formatWithCommas(transaction.foreignGiven.toLong().toString()),
+                                        currency = transaction.foreignCurrency,
+                                        rate = transaction.exchangeRate.toString(),
+                                        notes = transaction.notes
+                                    ))
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Filled.Edit,
+                                    contentDescription = "Edit",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { onDeleteTransaction(transaction) }
+                            ) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = "Delete",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Notes row (if exists and not editing)
+                if (!isEditing && transaction.notes.isNotBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outline,
+                                shape = RectangleShape
+                            )
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = "Notes: ${transaction.notes}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
             }
 
+            // Date Net Positions
             Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                ),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("TZS Received: ${formatNumber(transaction.tzsReceived)}")
-                Text("${transaction.foreignCurrency} Given: ${formatNumber(transaction.foreignGiven)}")
-            }
+                Column(
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Text(
+                        text = "Net Positions for $dateString",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("Rate: 1 ${transaction.foreignCurrency} = ${formatNumber(transaction.exchangeRate)} TZS")
-                Text("")
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Net TZS: ${formatNumber(transaction.netTzs)}",
-                    color = if (transaction.netTzs >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                )
-                Text(
-                    text = "Net ${transaction.foreignCurrency}: ${formatNumber(transaction.netForeign)}",
-                    color = if (transaction.netForeign >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                )
-            }
-
-            if (transaction.notes.isNotBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Notes: ${transaction.notes}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        NetPositionItem("TZS", dateTzs)
+                        NetPositionItem("CNY", dateCny)
+                        NetPositionItem("USDT", dateUsdt)
+                    }
+                }
             }
         }
     }
 }
+
+// Data class for editable transaction data
+data class EditableTransactionData(
+    val tzs: String,
+    val foreignAmount: String,
+    val currency: String,
+    val rate: String,
+    val notes: String
+)
 
 @Composable
 private fun DatePickerDialog(
