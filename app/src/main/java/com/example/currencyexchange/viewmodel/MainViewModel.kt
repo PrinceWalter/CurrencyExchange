@@ -18,7 +18,8 @@ class MainViewModel @Inject constructor(
     private val partnerRepository: PartnerRepository,
     private val transactionRepository: TransactionRepository,
     private val exchangeRateRepository: ExchangeRateRepository,
-    private val backupRepository: BackupRepository
+    private val backupRepository: BackupRepository,
+    private val migrationHelper: MigrationHelper
 ) : ViewModel() {
 
     val partners = partnerRepository.getAllActivePartners()
@@ -129,5 +130,10 @@ class MainViewModel @Inject constructor(
 
     fun generateBackupFileName(): String {
         return backupRepository.generateBackupFileName()
+    }
+
+    // Migration Functions
+    suspend fun migrateCnyCalculations(): MigrationResult {
+        return migrationHelper.migrateCnyTransactionCalculations()
     }
 }

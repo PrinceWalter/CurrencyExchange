@@ -45,4 +45,13 @@ object DatabaseModule {
     ): BackupRepository {
         return BackupRepository(partnerRepository, transactionRepository, exchangeRateRepository)
     }
+
+    @Provides
+    @Singleton
+    fun provideMigrationHelper(
+        transactionRepository: TransactionRepository,
+        partnerRepository: PartnerRepository
+    ): MigrationHelper {
+        return MigrationHelper(transactionRepository, partnerRepository)
+    }
 }

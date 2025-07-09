@@ -88,23 +88,6 @@ fun SimplePartnerPage(
 
     val partnerName = partner?.name ?: "Loading..."
 
-    // Helper function to add a new row
-    fun addNewRow() {
-        transactionRows = transactionRows + TransactionRow()
-    }
-
-    // Helper function to remove a row
-    fun removeRow(rowId: String) {
-        if (transactionRows.size > 1) {
-            transactionRows = transactionRows.filter { it.id != rowId }
-        }
-    }
-
-    // Helper function to update row
-    fun updateRow(rowId: String, updatedRow: TransactionRow) {
-        transactionRows = transactionRows.map { if (it.id == rowId) updatedRow else it }
-    }
-
     // Helper function to format number with commas
     fun formatWithCommas(number: String): String {
         if (number.isBlank()) return ""
@@ -128,6 +111,23 @@ fun SimplePartnerPage(
     // Helper function to remove commas for parsing
     fun removeCommas(number: String): String {
         return number.replace(",", "")
+    }
+
+    // Helper function to add a new row
+    fun addNewRow() {
+        transactionRows = transactionRows + TransactionRow()
+    }
+
+    // Helper function to remove a row
+    fun removeRow(rowId: String) {
+        if (transactionRows.size > 1) {
+            transactionRows = transactionRows.filter { it.id != rowId }
+        }
+    }
+
+    // Helper function to update row
+    fun updateRow(rowId: String, updatedRow: TransactionRow) {
+        transactionRows = transactionRows.map { if (it.id == rowId) updatedRow else it }
     }
 
     // Helper function to validate and save transactions
@@ -252,8 +252,23 @@ fun SimplePartnerPage(
                     )
 
                     // Show calculated net values
-                    val calcTzs = (editTzsReceived.toDoubleOrNull() ?: 0.0) -
-                            ((editForeignAmount.toDoubleOrNull() ?: 0.0) * (editExchangeRate.toDoubleOrNull() ?: 0.0))
+                    val calcTzs = when (editForeignCurrency) {
+                        "CNY" -> {
+                            // For CNY: Net = (CNY amount * Rate) - TZS received
+                            ((editForeignAmount.toDoubleOrNull() ?: 0.0) * (editExchangeRate.toDoubleOrNull() ?: 0.0)) -
+                                    (editTzsReceived.toDoubleOrNull() ?: 0.0)
+                        }
+                        "USDT" -> {
+                            // For USDT: Net = TZS received - (USDT amount * Rate) [original logic]
+                            (editTzsReceived.toDoubleOrNull() ?: 0.0) -
+                                    ((editForeignAmount.toDoubleOrNull() ?: 0.0) * (editExchangeRate.toDoubleOrNull() ?: 0.0))
+                        }
+                        else -> {
+                            // Default to USDT logic
+                            (editTzsReceived.toDoubleOrNull() ?: 0.0) -
+                                    ((editForeignAmount.toDoubleOrNull() ?: 0.0) * (editExchangeRate.toDoubleOrNull() ?: 0.0))
+                        }
+                    }
                     val calcForeign = if ((editExchangeRate.toDoubleOrNull() ?: 0.0) > 0) {
                         calcTzs / (editExchangeRate.toDoubleOrNull() ?: 1.0)
                     } else 0.0
@@ -281,6 +296,20 @@ fun SimplePartnerPage(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (calcForeign >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                             )
+
+                            // Add explanation for CNY calculation
+                            if (editForeignCurrency == "CNY") {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val foreignAmount = editForeignAmount.toDoubleOrNull() ?: 0.0
+                                val rate = editExchangeRate.toDoubleOrNull() ?: 0.0
+                                val tzsAmount = editTzsReceived.toDoubleOrNull() ?: 0.0
+                                Text(
+                                    text = "CNY Formula: (${formatNumber(foreignAmount)} × ${formatNumber(rate)}) - ${formatNumber(tzsAmount)} = ${formatNumber(calcTzs)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                            }
                         }
                     }
                 }
@@ -466,14 +495,14 @@ fun SimplePartnerPage(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Overall Net Positions Summary
+                // Net Positions Summary
                 partnerSummary?.let { summary ->
                     Card {
                         Column(
                             modifier = Modifier.padding(16.dp)
                         ) {
                             Text(
-                                text = "Overall Net Positions",
+                                text = "Net Positions",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
@@ -846,6 +875,61 @@ fun SimplePartnerPage(
                             modifier = Modifier.fillMaxWidth(),
                             maxLines = 3
                         )
+
+                        // Show calculated net values preview
+                        if (transactionRows.any { it.tzs.isNotBlank() || it.foreignAmount.isNotBlank() || it.rate.isNotBlank() }) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = "Preview of Net Calculations:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium
+                                    )
+
+                                    transactionRows.forEachIndexed { index, row ->
+                                        if (row.tzs.isNotBlank() || row.foreignAmount.isNotBlank() || row.rate.isNotBlank()) {
+                                            val tzs = removeCommas(row.tzs).toDoubleOrNull() ?: 0.0
+                                            val foreign = removeCommas(row.foreignAmount).toDoubleOrNull() ?: 0.0
+                                            val rate = row.rate.toDoubleOrNull() ?: when (row.currency) {
+                                                "CNY" -> defaultCnyRate.toDoubleOrNull() ?: 376.0
+                                                "USDT" -> defaultUsdtRate.toDoubleOrNull() ?: 2380.0
+                                                else -> 376.0
+                                            }
+
+                                            // Calculate net values based on currency type
+                                            val netTzs = when (row.currency) {
+                                                "CNY" -> {
+                                                    // For CNY: Net = (CNY amount * Rate) - TZS received
+                                                    (foreign * rate) - tzs
+                                                }
+                                                "USDT" -> {
+                                                    // For USDT: Net = TZS received - (USDT amount * Rate) [original logic]
+                                                    tzs - (foreign * rate)
+                                                }
+                                                else -> {
+                                                    // Default to USDT logic
+                                                    tzs - (foreign * rate)
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = "Row ${index + 1}: Net TZS = ${formatNumber(netTzs)}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (netTzs >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -917,6 +1001,27 @@ fun SimplePartnerPage(
                             text = "• Empty RATE fields will use default rates",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "📊 Net Position Calculations:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "• CNY: Net = (CNY Amount × Rate) - TZS Received",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        Text(
+                            text = "• USDT: Net = TZS Received - (USDT Amount × Rate)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                         )
                     }
                 }
@@ -1096,8 +1201,23 @@ private fun TransactionDateGroup(
                         )
 
                         // Net TZS (calculated)
-                        val calculatedNetTzs = (removeCommas(editData.tzs).toDoubleOrNull() ?: 0.0) -
-                                ((removeCommas(editData.foreignAmount).toDoubleOrNull() ?: 0.0) * (editData.rate.toDoubleOrNull() ?: 0.0))
+                        val calculatedNetTzs = when (editData.currency) {
+                            "CNY" -> {
+                                // For CNY: Net = (CNY amount * Rate) - TZS received
+                                ((removeCommas(editData.foreignAmount).toDoubleOrNull() ?: 0.0) * (editData.rate.toDoubleOrNull() ?: 0.0)) -
+                                        (removeCommas(editData.tzs).toDoubleOrNull() ?: 0.0)
+                            }
+                            "USDT" -> {
+                                // For USDT: Net = TZS received - (USDT amount * Rate) [original logic]
+                                (removeCommas(editData.tzs).toDoubleOrNull() ?: 0.0) -
+                                        ((removeCommas(editData.foreignAmount).toDoubleOrNull() ?: 0.0) * (editData.rate.toDoubleOrNull() ?: 0.0))
+                            }
+                            else -> {
+                                // Default to USDT logic
+                                (removeCommas(editData.tzs).toDoubleOrNull() ?: 0.0) -
+                                        ((removeCommas(editData.foreignAmount).toDoubleOrNull() ?: 0.0) * (editData.rate.toDoubleOrNull() ?: 0.0))
+                            }
+                        }
 
                         Text(
                             text = formatNumber(calculatedNetTzs),

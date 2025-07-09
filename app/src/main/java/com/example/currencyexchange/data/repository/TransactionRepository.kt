@@ -32,7 +32,22 @@ class TransactionRepository @Inject constructor(
         exchangeRate: Double,
         notes: String = ""
     ): Long {
-        val netTzs = tzsReceived - (foreignGiven * exchangeRate)
+        // Calculate net positions based on currency type
+        val netTzs = when (foreignCurrency) {
+            "CNY" -> {
+                // For CNY: Net = (CNY amount * Rate) - TZS received
+                (foreignGiven * exchangeRate) - tzsReceived
+            }
+            "USDT" -> {
+                // For USDT: Net = TZS received - (USDT amount * Rate) [original logic]
+                tzsReceived - (foreignGiven * exchangeRate)
+            }
+            else -> {
+                // Default to USDT logic for any other currency
+                tzsReceived - (foreignGiven * exchangeRate)
+            }
+        }
+
         val netForeign = if (exchangeRate > 0) netTzs / exchangeRate else 0.0
 
         val transaction = TransactionEntity(
@@ -52,12 +67,28 @@ class TransactionRepository @Inject constructor(
     }
 
     suspend fun updateTransaction(transaction: TransactionEntity) {
+        // Recalculate net positions based on currency type
+        val netTzs = when (transaction.foreignCurrency) {
+            "CNY" -> {
+                // For CNY: Net = (CNY amount * Rate) - TZS received
+                (transaction.foreignGiven * transaction.exchangeRate) - transaction.tzsReceived
+            }
+            "USDT" -> {
+                // For USDT: Net = TZS received - (USDT amount * Rate) [original logic]
+                transaction.tzsReceived - (transaction.foreignGiven * transaction.exchangeRate)
+            }
+            else -> {
+                // Default to USDT logic for any other currency
+                transaction.tzsReceived - (transaction.foreignGiven * transaction.exchangeRate)
+            }
+        }
+
+        val netForeign = if (transaction.exchangeRate > 0) netTzs / transaction.exchangeRate else 0.0
+
         val updatedTransaction = transaction.copy(
             lastModified = Date(),
-            netTzs = transaction.tzsReceived - (transaction.foreignGiven * transaction.exchangeRate),
-            netForeign = if (transaction.exchangeRate > 0)
-                (transaction.tzsReceived - (transaction.foreignGiven * transaction.exchangeRate)) / transaction.exchangeRate
-            else 0.0
+            netTzs = netTzs,
+            netForeign = netForeign
         )
         transactionDao.updateTransaction(updatedTransaction)
     }
