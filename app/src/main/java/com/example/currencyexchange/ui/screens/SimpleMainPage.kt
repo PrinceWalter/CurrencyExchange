@@ -41,11 +41,14 @@ fun SimpleMainPage(
 
     // UI state
     var showAddPartnerDialog by remember { mutableStateOf(false) }
+    var showEditPartnerDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var partnerToDelete by remember { mutableStateOf(0L) }
+    var partnerToEdit by remember { mutableStateOf(0L) }
     var showDateRangeDialog by remember { mutableStateOf(false) }
-    var showSaveDialog by remember { mutableStateOf(false) }
     var newPartnerName by remember { mutableStateOf("") }
+    var editPartnerName by remember { mutableStateOf("") }
+    var partnerNameError by remember { mutableStateOf("") }
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
 
@@ -58,8 +61,35 @@ fun SimpleMainPage(
     var restoreResult by remember { mutableStateOf<RestoreResult?>(null) }
     var backupMessage by remember { mutableStateOf("") }
 
+    // Export state
+    var isExportingReport by remember { mutableStateOf(false) }
+    var exportMessage by remember { mutableStateOf("") }
+    var showExportResultDialog by remember { mutableStateOf(false) }
+
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    // Helper function to check if partner name already exists
+    fun isPartnerNameTaken(name: String, excludeId: Long = -1): Boolean {
+        return partners.any {
+            it.name.trim().equals(name.trim(), ignoreCase = true) && it.id != excludeId
+        }
+    }
+
+    // Helper function to validate partner name
+    fun validatePartnerName(name: String, excludeId: Long = -1): String {
+        return when {
+            name.isBlank() -> "Partner name cannot be empty"
+            name.length < 2 -> "Partner name must be at least 2 characters"
+            name.length > 50 -> "Partner name cannot exceed 50 characters"
+            isPartnerNameTaken(name, excludeId) -> "A partner with this name already exists"
+            else -> ""
+        }
+    }
+
+    // Date range states
+    var startDate by remember { mutableStateOf(Date(System.currentTimeMillis() - (30 * 24 * 60 * 60 * 1000))) }
+    var endDate by remember { mutableStateOf(Date()) }
 
     // File picker for backup export
     val backupExportLauncher = rememberLauncherForActivityResult(
@@ -127,31 +157,84 @@ fun SimpleMainPage(
         }
     }
 
-    // Date range states
-    var startDate by remember { mutableStateOf(Date(System.currentTimeMillis() - (30 * 24 * 60 * 60 * 1000))) }
-    var endDate by remember { mutableStateOf(Date()) }
-    var showDateRangeResults by remember { mutableStateOf(false) }
-    var dateRangeResults by remember { mutableStateOf<PartnerSummary?>(null) }
-    var isLoadingReport by remember { mutableStateOf(false) }
+    // File picker for PDF export
+    val pdfExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        uri?.let {
+            coroutineScope.launch {
+                isExportingReport = true
+                try {
+                    val transactions = viewModel.getTransactionsByDateRange(selectedPartnerId, startDate, endDate)
+                    val summary = viewModel.getPartnerSummaryByDateRange(selectedPartnerId, startDate, endDate)
+                    val partnerName = partners.find { it.id == selectedPartnerId }?.name ?: "Partner"
+                    val outputStream = context.contentResolver.openOutputStream(uri)
 
-    // Move LaunchedEffect outside of onClick and use trigger state
-    var shouldGenerateReport by remember { mutableStateOf(false) }
+                    if (outputStream != null) {
+                        val success = viewModel.exportDateRangeToPdf(
+                            outputStream = outputStream,
+                            partnerName = partnerName,
+                            transactions = transactions,
+                            startDate = startDate,
+                            endDate = endDate,
+                            summary = summary
+                        )
 
-    // Handle report generation
-    LaunchedEffect(shouldGenerateReport) {
-        if (shouldGenerateReport && selectedPartnerId != 0L) {
-            isLoadingReport = true
-            try {
-                dateRangeResults = viewModel.getPartnerSummaryByDateRange(
-                    selectedPartnerId, startDate, endDate
-                )
-                showDateRangeDialog = false
-                showDateRangeResults = true
-            } catch (e: Exception) {
-                // Handle error
-            } finally {
-                isLoadingReport = false
-                shouldGenerateReport = false
+                        exportMessage = if (success) {
+                            "PDF report exported successfully!\n\nTransactions: ${transactions.size}\nDate Range: ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(startDate)} - ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(endDate)}"
+                        } else {
+                            "Failed to export PDF report. Please try again."
+                        }
+                        showExportResultDialog = true
+                        showDateRangeDialog = false
+                    }
+                } catch (e: Exception) {
+                    exportMessage = "Error exporting PDF: ${e.message}"
+                    showExportResultDialog = true
+                } finally {
+                    isExportingReport = false
+                }
+            }
+        }
+    }
+
+    // File picker for Excel export
+    val excelExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    ) { uri ->
+        uri?.let {
+            coroutineScope.launch {
+                isExportingReport = true
+                try {
+                    val transactions = viewModel.getTransactionsByDateRange(selectedPartnerId, startDate, endDate)
+                    val summary = viewModel.getPartnerSummaryByDateRange(selectedPartnerId, startDate, endDate)
+                    val partnerName = partners.find { it.id == selectedPartnerId }?.name ?: "Partner"
+                    val outputStream = context.contentResolver.openOutputStream(uri)
+
+                    if (outputStream != null) {
+                        val success = viewModel.exportDateRangeToExcel(
+                            outputStream = outputStream,
+                            partnerName = partnerName,
+                            transactions = transactions,
+                            startDate = startDate,
+                            endDate = endDate,
+                            summary = summary
+                        )
+
+                        exportMessage = if (success) {
+                            "Excel report exported successfully!\n\nTransactions: ${transactions.size}\nDate Range: ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(startDate)} - ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(endDate)}\n\nThe Excel file includes formulas for automatic calculations."
+                        } else {
+                            "Failed to export Excel report. Please try again."
+                        }
+                        showExportResultDialog = true
+                        showDateRangeDialog = false
+                    }
+                } catch (e: Exception) {
+                    exportMessage = "Error exporting Excel: ${e.message}"
+                    showExportResultDialog = true
+                } finally {
+                    isExportingReport = false
+                }
             }
         }
     }
@@ -182,26 +265,49 @@ fun SimpleMainPage(
             onDismissRequest = {
                 showAddPartnerDialog = false
                 newPartnerName = ""
+                partnerNameError = ""
             },
             title = { Text("Add New Partner") },
             text = {
-                OutlinedTextField(
-                    value = newPartnerName,
-                    onValueChange = { newPartnerName = it },
-                    label = { Text("Partner Name") },
-                    singleLine = true
-                )
+                Column {
+                    OutlinedTextField(
+                        value = newPartnerName,
+                        onValueChange = {
+                            newPartnerName = it
+                            partnerNameError = validatePartnerName(it)
+                        },
+                        label = { Text("Partner Name") },
+                        singleLine = true,
+                        isError = partnerNameError.isNotEmpty(),
+                        supportingText = if (partnerNameError.isNotEmpty()) {
+                            { Text(partnerNameError, color = MaterialTheme.colorScheme.error) }
+                        } else null
+                    )
+
+                    if (partnerNameError.isEmpty() && newPartnerName.isNotBlank()) {
+                        Text(
+                            text = "✓ Partner name is available",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (newPartnerName.isNotBlank()) {
+                        val error = validatePartnerName(newPartnerName)
+                        if (error.isEmpty()) {
                             viewModel.addPartner(newPartnerName.trim())
                             showAddPartnerDialog = false
                             newPartnerName = ""
+                            partnerNameError = ""
+                        } else {
+                            partnerNameError = error
                         }
                     },
-                    enabled = newPartnerName.isNotBlank()
+                    enabled = newPartnerName.isNotBlank() && partnerNameError.isEmpty()
                 ) {
                     Text("Add")
                 }
@@ -210,9 +316,98 @@ fun SimpleMainPage(
                 TextButton(onClick = {
                     showAddPartnerDialog = false
                     newPartnerName = ""
+                    partnerNameError = ""
                 }) {
                     Text("Cancel")
                 }
+            }
+        )
+    }
+
+    // Edit Partner Dialog
+    if (showEditPartnerDialog) {
+        val partnerName = partners.find { it.id == partnerToEdit }?.name ?: ""
+        AlertDialog(
+            onDismissRequest = {
+                showEditPartnerDialog = false
+                editPartnerName = ""
+                partnerNameError = ""
+                partnerToEdit = 0L
+            },
+            title = { Text("Edit Partner Name") },
+            text = {
+                Column {
+                    Text(
+                        text = "Current name: $partnerName",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = editPartnerName,
+                        onValueChange = {
+                            editPartnerName = it
+                            partnerNameError = validatePartnerName(it, partnerToEdit)
+                        },
+                        label = { Text("New Partner Name") },
+                        singleLine = true,
+                        isError = partnerNameError.isNotEmpty(),
+                        supportingText = if (partnerNameError.isNotEmpty()) {
+                            { Text(partnerNameError, color = MaterialTheme.colorScheme.error) }
+                        } else null
+                    )
+
+                    if (partnerNameError.isEmpty() && editPartnerName.isNotBlank() && editPartnerName.trim() != partnerName) {
+                        Text(
+                            text = "✓ New partner name is available",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val error = validatePartnerName(editPartnerName, partnerToEdit)
+                        if (error.isEmpty() && editPartnerName.trim() != partnerName) {
+                            viewModel.updatePartnerName(partnerToEdit, editPartnerName.trim())
+                            showEditPartnerDialog = false
+                            editPartnerName = ""
+                            partnerNameError = ""
+                            partnerToEdit = 0L
+                        } else if (editPartnerName.trim() == partnerName) {
+                            showEditPartnerDialog = false
+                            editPartnerName = ""
+                            partnerNameError = ""
+                            partnerToEdit = 0L
+                        } else {
+                            partnerNameError = error
+                        }
+                    },
+                    enabled = editPartnerName.isNotBlank() && partnerNameError.isEmpty()
+                ) {
+                    Text("Update")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showEditPartnerDialog = false
+                    editPartnerName = ""
+                    partnerNameError = ""
+                    partnerToEdit = 0L
+                }) {
+                    Text("Cancel")
+                }
+            },
+            icon = {
+                Icon(
+                    Icons.Filled.Edit,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
         )
     }
@@ -261,11 +456,13 @@ fun SimpleMainPage(
         )
     }
 
-    // Date Range Dialog
+    // Date Range Dialog with Export Options
     if (showDateRangeDialog) {
         AlertDialog(
-            onDismissRequest = { showDateRangeDialog = false },
-            title = { Text("Select Date Range") },
+            onDismissRequest = {
+                showDateRangeDialog = false
+            },
+            title = { Text("Date Range Report & Export") },
             text = {
                 Column {
                     Text("Partner: ${partners.find { it.id == selectedPartnerId }?.name}")
@@ -299,46 +496,105 @@ fun SimpleMainPage(
                             color = MaterialTheme.colorScheme.error
                         )
                     }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        shouldGenerateReport = true
-                    },
-                    enabled = !startDate.after(endDate) && !isLoadingReport
-                ) {
-                    if (isLoadingReport) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp))
-                    } else {
-                        Text("Get Report")
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = "Choose an action:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Export Options
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Export to PDF
+                        Button(
+                            onClick = {
+                                if (!startDate.after(endDate)) {
+                                    val partnerName = partners.find { it.id == selectedPartnerId }?.name ?: "Partner"
+                                    val fileName = "DateRangeReport_${partnerName}_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(startDate)}_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(endDate)}.html"
+                                    pdfExportLauncher.launch(fileName)
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = !startDate.after(endDate) && !isExportingReport
+                        ) {
+                            if (isExportingReport) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                            } else {
+                                Icon(Icons.Filled.AccountBox, contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("PDF")
+                        }
+
+                        // Export to Excel
+                        Button(
+                            onClick = {
+                                if (!startDate.after(endDate)) {
+                                    val partnerName = partners.find { it.id == selectedPartnerId }?.name ?: "Partner"
+                                    val fileName = "DateRangeReport_${partnerName}_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(startDate)}_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(endDate)}.csv"
+                                    excelExportLauncher.launch(fileName)
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = !startDate.after(endDate) && !isExportingReport
+                        ) {
+                            if (isExportingReport) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                            } else {
+                                Icon(Icons.Filled.Build, contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Excel")
+                        }
+                    }
+
+                    if (isExportingReport) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Generating report...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             },
-            dismissButton = {
+            confirmButton = {
                 TextButton(onClick = { showDateRangeDialog = false }) {
-                    Text("Cancel")
+                    Text("Close")
                 }
-            }
+            },
+            dismissButton = null
         )
     }
 
-    // Save Online Dialog
-    if (showSaveDialog) {
+    // Export Result Dialog
+    if (showExportResultDialog) {
         AlertDialog(
-            onDismissRequest = { showSaveDialog = false },
-            title = { Text("Save Online") },
-            text = { Text("All data has been saved to cloud storage successfully.") },
+            onDismissRequest = { showExportResultDialog = false },
+            title = {
+                Text(if (exportMessage.contains("successfully")) "Export Successful" else "Export Failed")
+            },
+            text = { Text(exportMessage) },
             confirmButton = {
-                TextButton(onClick = { showSaveDialog = false }) {
+                TextButton(onClick = { showExportResultDialog = false }) {
                     Text("OK")
                 }
             },
             icon = {
                 Icon(
-                    Icons.Filled.Check,
+                    if (exportMessage.contains("successfully")) Icons.Filled.Check else Icons.Filled.Warning,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = if (exportMessage.contains("successfully"))
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.error
                 )
             }
         )
@@ -479,331 +735,286 @@ fun SimpleMainPage(
         )
     }
 
-    // Date Range Results View
-    if (showDateRangeResults) {
-        dateRangeResults?.let { results ->
-            Column(
-                modifier = modifier.fillMaxSize()
-            ) {
-                TopAppBar(
-                    title = { Text("Date Range Report") },
-                    navigationIcon = {
-                        IconButton(onClick = { showDateRangeResults = false }) {
-                            Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-                        }
+    // Main Page View
+    Column(
+        modifier = modifier.fillMaxSize()
+    ) {
+        TopAppBar(
+            title = { Text("Currency Exchange") }
+        )
+
+        // Compact Cumulative Net Positions at the top
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(top = 8.dp)
+        ) {
+            var cumulativeSummary by remember { mutableStateOf<PartnerSummary?>(null) }
+            var isLoadingCumulative by remember { mutableStateOf(false) }
+
+            // Load cumulative summary when partners change
+            LaunchedEffect(partners) {
+                if (partners.isNotEmpty()) {
+                    isLoadingCumulative = true
+                    try {
+                        cumulativeSummary = viewModel.getCumulativeNetPositions()
+                    } catch (e: Exception) {
+                        // Handle error silently
+                    } finally {
+                        isLoadingCumulative = false
                     }
-                )
-
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Card {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
-                        ) {
-                            Text(
-                                text = "Report Details",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Text("Partner: ${partners.find { it.id == selectedPartnerId }?.name}")
-                            Text("From: ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(startDate)}")
-                            Text("To: ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(endDate)}")
-                            Text("Transactions: ${results.transactionCount}")
-                        }
-                    }
-
-                    Card {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
-                        ) {
-                            Text(
-                                text = "Net Positions",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                NetPositionItem("TZS", results.totalNetTzs)
-                                NetPositionItem("CNY", results.totalNetCny)
-                                NetPositionItem("USDT", results.totalNetUsdt)
-                            }
-                        }
-                    }
+                } else {
+                    cumulativeSummary = null
                 }
             }
-        }
-    } else {
-        // Main Page View
-        Column(
-            modifier = modifier.fillMaxSize()
-        ) {
-            TopAppBar(
-                title = { Text("Currency Exchange") },
-                actions = {
-                    IconButton(
-                        onClick = { showSaveDialog = true }
-                    ) {
-                        // Icon(Icons.Filled.CloudUpload, contentDescription = "Save Online")
-                    }
-                }
-            )
 
-            // Compact Cumulative Net Positions at the top
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                ),
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 8.dp)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                var cumulativeSummary by remember { mutableStateOf<PartnerSummary?>(null) }
-                var isLoadingCumulative by remember { mutableStateOf(false) }
-
-                // Load cumulative summary when partners change
-                LaunchedEffect(partners) {
-                    if (partners.isNotEmpty()) {
-                        isLoadingCumulative = true
-                        try {
-                            cumulativeSummary = viewModel.getCumulativeNetPositions()
-                        } catch (e: Exception) {
-                            // Handle error silently
-                        } finally {
-                            isLoadingCumulative = false
-                        }
-                    } else {
-                        cumulativeSummary = null
-                    }
-                }
-
+                // Header
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Net Positions:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "Net Positions",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
 
                     if (isLoadingCumulative) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
-                    } else if (cumulativeSummary != null) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CompactNetItem("TZS", cumulativeSummary!!.totalNetTzs)
-                            CompactNetItem("CNY", cumulativeSummary!!.totalNetCny)
-                            CompactNetItem("USDT", cumulativeSummary!!.totalNetUsdt)
-                        }
-                    } else if (partners.isEmpty()) {
-                        Text(
-                            text = "Add partners to see positions",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
-                    } else {
-                        Text(
-                            text = "No transactions yet",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
                     }
                 }
-            }
 
-            Column(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Partner Management Section
-                Card {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
+                // Content
+                if (cumulativeSummary != null && !isLoadingCumulative) {
+                    // Responsive layout for net positions
+                    ResponsiveNetPositionsLayout(
+                        tzsAmount = cumulativeSummary!!.totalNetTzs,
+                        cnyAmount = cumulativeSummary!!.totalNetCny,
+                        usdtAmount = cumulativeSummary!!.totalNetUsdt
+                    )
+                } else if (partners.isEmpty()) {
+                    Text(
+                        text = "Add partners to see positions",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else if (!isLoadingCumulative) {
+                    Text(
+                        text = "No transactions yet",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Partner Management Section
+            Card {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Text(
+                            text = "Partners",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Button(
+                            onClick = { showAddPartnerDialog = true }
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Partner")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Search Field
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { viewModel.updateSearchQuery(it) },
+                        label = { Text("Search partners...") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.Search, contentDescription = "Search")
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotBlank()) {
+                                IconButton(
+                                    onClick = { viewModel.updateSearchQuery("") }
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Clear,
+                                        contentDescription = "Clear search",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Search Results Info
+                    if (searchQuery.isNotBlank()) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Partners",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                text = "Found ${filteredPartners.size} of ${partners.size} partners",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
-                            Button(
-                                onClick = { showAddPartnerDialog = true }
-                            ) {
-                                Icon(Icons.Filled.Add, contentDescription = null)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Add Partner")
+                            if (filteredPartners.size != partners.size) {
+                                TextButton(
+                                    onClick = { viewModel.updateSearchQuery("") }
+                                ) {
+                                    Text("Clear")
+                                }
                             }
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
 
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Search Field
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { viewModel.updateSearchQuery(it) },
-                            label = { Text("Search partners...") },
-                            leadingIcon = {
-                                Icon(Icons.Filled.Search, contentDescription = "Search")
-                            },
-                            trailingIcon = {
-                                if (searchQuery.isNotBlank()) {
-                                    IconButton(
-                                        onClick = { viewModel.updateSearchQuery("") }
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Clear,
-                                            contentDescription = "Clear search",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Search Results Info
+                    // Partners List
+                    if (filteredPartners.isEmpty()) {
                         if (searchQuery.isNotBlank()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            // No search results
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
+                                Icon(
+                                    Icons.Filled.Search,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "Found ${filteredPartners.size} of ${partners.size} partners",
+                                    text = "No partners found for \"$searchQuery\"",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Try a different search term",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-
-                                if (filteredPartners.size != partners.size) {
-                                    TextButton(
-                                        onClick = { viewModel.updateSearchQuery("") }
-                                    ) {
-                                        Text("Clear")
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-
-                        // Partners List
-                        if (filteredPartners.isEmpty()) {
-                            if (searchQuery.isNotBlank()) {
-                                // No search results
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Search,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(48.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = "No partners found for \"$searchQuery\"",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Text(
-                                        text = "Try a different search term",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            } else {
-                                // No partners at all
-                                Text(
-                                    text = "No partners added yet",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(16.dp)
-                                )
                             }
                         } else {
-                            LazyColumn(
-                                modifier = Modifier.height(200.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                itemsIndexed(filteredPartners) { _, partner ->
-                                    Card(
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = if (selectedPartnerId == partner.id) {
-                                                MaterialTheme.colorScheme.primaryContainer
-                                            } else {
-                                                MaterialTheme.colorScheme.surface
-                                            }
-                                        ),
-                                        onClick = { viewModel.selectPartner(partner.id) }
+                            // No partners at all
+                            Text(
+                                text = "No partners added yet",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.height(200.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            itemsIndexed(filteredPartners) { _, partner ->
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (selectedPartnerId == partner.id) {
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.surface
+                                        }
+                                    ),
+                                    onClick = { viewModel.selectPartner(partner.id) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(16.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = partner.name,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = if (selectedPartnerId == partner.id) FontWeight.Bold else FontWeight.Normal
-                                            )
+                                        Text(
+                                            text = partner.name,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (selectedPartnerId == partner.id) FontWeight.Bold else FontWeight.Normal,
+                                            modifier = Modifier.weight(1f)
+                                        )
 
-                                            Row {
-                                                if (selectedPartnerId == partner.id) {
-                                                    Icon(
-                                                        Icons.Filled.Check,
-                                                        contentDescription = "Selected",
-                                                        tint = MaterialTheme.colorScheme.primary,
-                                                        modifier = Modifier.size(20.dp)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                }
+                                        Row {
+                                            if (selectedPartnerId == partner.id) {
+                                                Icon(
+                                                    Icons.Filled.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                            }
 
-                                                IconButton(
-                                                    onClick = {
-                                                        partnerToDelete = partner.id
-                                                        showDeleteDialog = true
-                                                    }
-                                                ) {
-                                                    Icon(
-                                                        Icons.Filled.Delete,
-                                                        contentDescription = "Delete",
-                                                        tint = MaterialTheme.colorScheme.error,
-                                                        modifier = Modifier.size(20.dp)
-                                                    )
+                                            IconButton(
+                                                onClick = {
+                                                    partnerToEdit = partner.id
+                                                    editPartnerName = partner.name
+                                                    showEditPartnerDialog = true
                                                 }
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Edit,
+                                                    contentDescription = "Edit",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+
+                                            IconButton(
+                                                onClick = {
+                                                    partnerToDelete = partner.id
+                                                    showDeleteDialog = true
+                                                }
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Delete,
+                                                    contentDescription = "Delete",
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
                                             }
                                         }
                                     }
@@ -812,158 +1023,112 @@ fun SimpleMainPage(
                         }
                     }
                 }
+            }
 
-                // Actions Section
-                Card {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
+            // Actions Section
+            Card {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "Actions",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Go to Partner Page
+                    Button(
+                        onClick = {
+                            if (selectedPartnerId != 0L) {
+                                navController.navigate("partner_page/$selectedPartnerId")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selectedPartnerId != 0L
                     ) {
-                        Text(
-                            text = "Actions",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Go to Partner Page
-                        Button(
-                            onClick = {
-                                if (selectedPartnerId != 0L) {
-                                    navController.navigate("partner_page/$selectedPartnerId")
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = selectedPartnerId != 0L
-                        ) {
-                            Icon(Icons.Filled.Person, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Open Partner Transactions")
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Date Range Report
-                        OutlinedButton(
-                            onClick = {
-                                if (selectedPartnerId != 0L) {
-                                    showDateRangeDialog = true
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = selectedPartnerId != 0L
-                        ) {
-                            Icon(Icons.Filled.DateRange, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Get Date Range Report")
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Save Online
-                        OutlinedButton(
-                            onClick = { showSaveDialog = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            //   Icon(Icons.Filled.CloudUpload, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Save All Data Online")
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Backup and Restore section
-                        Text(
-                            text = "Backup & Restore",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Export Backup
-                        Button(
-                            onClick = {
-                                val fileName = viewModel.generateBackupFileName()
-                                backupExportLauncher.launch(fileName)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !isCreatingBackup
-                        ) {
-                            if (isCreatingBackup) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Icon(Icons.Filled.Check, contentDescription = null)
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (isCreatingBackup) "Creating Backup..." else "Export Backup")
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Import Backup
-                        OutlinedButton(
-                            onClick = { showRestoreDialog = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !isRestoringBackup
-                        ) {
-                            if (isRestoringBackup) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Icon(Icons.Filled.Add, contentDescription = null)
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (isRestoringBackup) "Restoring..." else "Import Backup")
-                        }
-
-                        if (selectedPartnerId == 0L) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Please select a partner to enable actions",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Icon(Icons.Filled.Person, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Open Partner Transactions")
                     }
-                }
 
-                // Quick Info
-                if (selectedPartnerId != 0L) {
-                    val selectedPartner = partners.find { it.id == selectedPartnerId }
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                        )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Date Range Report
+                    OutlinedButton(
+                        onClick = {
+                            if (selectedPartnerId != 0L) {
+                                showDateRangeDialog = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selectedPartnerId != 0L
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
-                        ) {
-                            Text(
-                                text = "Selected Partner",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
+                        Icon(Icons.Filled.DateRange, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Get Date Range Report")
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Backup and Restore section
+                    Text(
+                        text = "Backup & Restore",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Export Backup
+                    Button(
+                        onClick = {
+                            val fileName = viewModel.generateBackupFileName()
+                            backupExportLauncher.launch(fileName)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isCreatingBackup
+                    ) {
+                        if (isCreatingBackup) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
                             )
-                            Text(
-                                text = selectedPartner?.name ?: "",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "• Click 'Open Partner Transactions' to add new transactions",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Text(
-                                text = "• Click 'Get Date Range Report' to view transaction history",
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                        } else {
+                            Icon(Icons.Filled.Check, contentDescription = null)
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isCreatingBackup) "Creating Backup..." else "Export Backup")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Import Backup
+                    OutlinedButton(
+                        onClick = { showRestoreDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isRestoringBackup
+                    ) {
+                        if (isRestoringBackup) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Filled.Add, contentDescription = null)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isRestoringBackup) "Restoring..." else "Import Backup")
+                    }
+
+                    if (selectedPartnerId == 0L) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Please select a partner to enable actions",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -972,30 +1137,78 @@ fun SimpleMainPage(
 }
 
 @Composable
-private fun CompactNetItem(
+private fun ResponsiveNetPositionsLayout(
+    tzsAmount: Double,
+    cnyAmount: Double,
+    usdtAmount: Double,
+    modifier: Modifier = Modifier
+) {
+    // Calculate if we need to use vertical layout based on text length
+    val maxTextLength = maxOf(
+        formatNumberWithCommas(tzsAmount).length,
+        formatNumberWithCommas(cnyAmount).length,
+        formatNumberWithCommas(usdtAmount).length
+    )
+
+    // Use vertical layout for very large numbers (more than 15 characters including commas and decimals)
+    if (maxTextLength > 15) {
+        // Vertical layout for large numbers
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            EnhancedNetItem("TZS", tzsAmount, modifier = Modifier.fillMaxWidth())
+            EnhancedNetItem("CNY", cnyAmount, modifier = Modifier.fillMaxWidth())
+            EnhancedNetItem("USDT", usdtAmount, modifier = Modifier.fillMaxWidth())
+        }
+    } else {
+        // Horizontal layout for smaller numbers
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EnhancedNetItem("TZS", tzsAmount, modifier = Modifier.weight(1f))
+            EnhancedNetItem("CNY", cnyAmount, modifier = Modifier.weight(1f))
+            EnhancedNetItem("USDT", usdtAmount, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun EnhancedNetItem(
     currency: String,
     amount: Double,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    val formattedAmount = formatNumberWithCommas(amount)
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
     ) {
         Text(
             text = currency,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
         )
+
         Text(
-            text = formatNumberWithCommas(amount),
-            style = MaterialTheme.typography.bodySmall,
+            text = formattedAmount,
+            style = when {
+                formattedAmount.length > 20 -> MaterialTheme.typography.bodySmall
+                formattedAmount.length > 15 -> MaterialTheme.typography.bodyMedium
+                formattedAmount.length > 10 -> MaterialTheme.typography.titleSmall
+                else -> MaterialTheme.typography.titleMedium
+            },
             fontWeight = FontWeight.Bold,
             color = if (amount >= 0)
-                MaterialTheme.colorScheme.primary
+                MaterialTheme.colorScheme.onPrimaryContainer
             else
-                MaterialTheme.colorScheme.error
+                MaterialTheme.colorScheme.error,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }
@@ -1164,18 +1377,19 @@ private fun getMaxDayOfMonth(year: Int, month: Int): Int {
     return calendar.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
 }
 
-private fun formatNumber(number: Double): String {
-    return String.format("%.2f", number)
-}
-
 private fun formatNumberWithCommas(number: Double): String {
     val formatted = String.format("%.2f", number)
     val parts = formatted.split(".")
     val integerPart = parts[0]
     val decimalPart = if (parts.size > 1) parts[1] else "00"
 
-    // Add commas to integer part
-    val formattedInteger = integerPart.reversed().chunked(3).joinToString(",").reversed()
+    // Handle negative sign
+    val isNegative = integerPart.startsWith("-")
+    val absoluteIntegerPart = if (isNegative) integerPart.substring(1) else integerPart
 
-    return "$formattedInteger.$decimalPart"
+    // Add commas to integer part
+    val formattedInteger = absoluteIntegerPart.reversed().chunked(3).joinToString(",").reversed()
+
+    val sign = if (isNegative) "-" else ""
+    return "$sign$formattedInteger.$decimalPart"
 }
