@@ -15,6 +15,17 @@ import com.example.currencyexchange.data.repository.*
 import com.example.currencyexchange.data.dao.PartnerSummary
 import com.example.currencyexchange.data.backup.*
 
+// Data class for analysis results
+data class AnalysisResult(
+    val totalTzsReceived: Double,
+    val totalCnySold: Double,
+    val totalUsdtSold: Double,
+    val totalTransactions: Int,
+    val cnyTransactions: Int,
+    val usdtTransactions: Int,
+    val dateRange: String
+)
+
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val partnerRepository: PartnerRepository,
@@ -107,13 +118,21 @@ class MainViewModel @Inject constructor(
         partnerId: Long,
         startDate: Date,
         endDate: Date
-    ) = transactionRepository.getPartnerSummaryByDateRange(partnerId, startDate, endDate)
+    ) = transactionRepository.getPartnerSummaryByDateRange(
+        partnerId,
+        getStartOfDay(startDate),
+        getEndOfDay(endDate)
+    )
 
     suspend fun getTransactionsByDateRange(
         partnerId: Long,
         startDate: Date,
         endDate: Date
-    ) = transactionRepository.getTransactionsByDateRange(partnerId, startDate, endDate)
+    ) = transactionRepository.getTransactionsByDateRange(
+        partnerId,
+        getStartOfDay(startDate),
+        getEndOfDay(endDate)
+    )
 
     suspend fun getDefaultExchangeRates() = exchangeRateRepository.getAllDefaultRates()
 
@@ -152,6 +171,95 @@ class MainViewModel @Inject constructor(
             totalNetUsdt = cumulativeUsdt,
             transactionCount = cumulativeTransactions
         )
+    }
+
+    // NEW ANALYSIS FUNCTIONS
+    suspend fun performCrossPartnerAnalysis(startDate: Date, endDate: Date): AnalysisResult {
+        val currentPartners = partners.first()
+
+        // Make dates inclusive by setting time to start and end of day
+        val inclusiveStartDate = getStartOfDay(startDate)
+        val inclusiveEndDate = getEndOfDay(endDate)
+
+        var totalTzsReceived = 0.0
+        var totalCnySold = 0.0
+        var totalUsdtSold = 0.0
+        var totalTransactions = 0
+        var cnyTransactions = 0
+        var usdtTransactions = 0
+
+        currentPartners.forEach { partner ->
+            try {
+                val transactions = transactionRepository.getTransactionsByDateRange(
+                    partnerId = partner.id,
+                    startDate = inclusiveStartDate,
+                    endDate = inclusiveEndDate
+                )
+
+                transactions.forEach { transaction ->
+                    totalTzsReceived += transaction.tzsReceived
+                    totalTransactions++
+
+                    when (transaction.foreignCurrency) {
+                        "CNY" -> {
+                            totalCnySold += transaction.foreignGiven
+                            cnyTransactions++
+                        }
+                        "USDT" -> {
+                            totalUsdtSold += transaction.foreignGiven
+                            usdtTransactions++
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Skip partners with errors
+            }
+        }
+
+        val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+        val dateRange = if (isSameDay(startDate, endDate)) {
+            dateFormat.format(startDate)
+        } else {
+            "${dateFormat.format(startDate)} - ${dateFormat.format(endDate)}"
+        }
+
+        return AnalysisResult(
+            totalTzsReceived = totalTzsReceived,
+            totalCnySold = totalCnySold,
+            totalUsdtSold = totalUsdtSold,
+            totalTransactions = totalTransactions,
+            cnyTransactions = cnyTransactions,
+            usdtTransactions = usdtTransactions,
+            dateRange = dateRange
+        )
+    }
+
+    private fun isSameDay(date1: Date, date2: Date): Boolean {
+        val cal1 = java.util.Calendar.getInstance().apply { time = date1 }
+        val cal2 = java.util.Calendar.getInstance().apply { time = date2 }
+
+        return cal1.get(java.util.Calendar.YEAR) == cal2.get(java.util.Calendar.YEAR) &&
+                cal1.get(java.util.Calendar.DAY_OF_YEAR) == cal2.get(java.util.Calendar.DAY_OF_YEAR)
+    }
+
+    private fun getStartOfDay(date: Date): Date {
+        val calendar = java.util.Calendar.getInstance()
+        calendar.time = date
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        calendar.set(java.util.Calendar.MINUTE, 0)
+        calendar.set(java.util.Calendar.SECOND, 0)
+        calendar.set(java.util.Calendar.MILLISECOND, 0)
+        return calendar.time
+    }
+
+    private fun getEndOfDay(date: Date): Date {
+        val calendar = java.util.Calendar.getInstance()
+        calendar.time = date
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 23)
+        calendar.set(java.util.Calendar.MINUTE, 59)
+        calendar.set(java.util.Calendar.SECOND, 59)
+        calendar.set(java.util.Calendar.MILLISECOND, 999)
+        return calendar.time
     }
 
     // Export functions for date range reports

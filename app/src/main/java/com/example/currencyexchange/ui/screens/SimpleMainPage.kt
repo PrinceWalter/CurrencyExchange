@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 import com.example.currencyexchange.viewmodel.MainViewModel
+import com.example.currencyexchange.viewmodel.AnalysisResult
 import com.example.currencyexchange.data.dao.PartnerSummary
 import com.example.currencyexchange.data.backup.RestoreResult
 import com.example.currencyexchange.ui.components.NetPositionItem
@@ -51,6 +52,16 @@ fun SimpleMainPage(
     var partnerNameError by remember { mutableStateOf("") }
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
+
+    // Analysis states
+    var showAnalysisDialog by remember { mutableStateOf(false) }
+    var showAnalysisStartDatePicker by remember { mutableStateOf(false) }
+    var showAnalysisEndDatePicker by remember { mutableStateOf(false) }
+    var analysisStartDate by remember { mutableStateOf(Date()) } // Default to today
+    var analysisEndDate by remember { mutableStateOf(Date()) } // Default to today (single day analysis)
+    var analysisResult by remember { mutableStateOf<AnalysisResult?>(null) }
+    var isPerformingAnalysis by remember { mutableStateOf(false) }
+    var showAnalysisResultDialog by remember { mutableStateOf(false) }
 
     // Backup and Restore UI state
     var showBackupDialog by remember { mutableStateOf(false) }
@@ -239,6 +250,26 @@ fun SimpleMainPage(
         }
     }
 
+    // Analysis Start Date Picker Dialog
+    if (showAnalysisStartDatePicker) {
+        DatePickerDialog(
+            currentDate = analysisStartDate,
+            onDateSelected = { analysisStartDate = it },
+            onDismiss = { showAnalysisStartDatePicker = false },
+            title = "Select Analysis Start Date"
+        )
+    }
+
+    // Analysis End Date Picker Dialog
+    if (showAnalysisEndDatePicker) {
+        DatePickerDialog(
+            currentDate = analysisEndDate,
+            onDateSelected = { analysisEndDate = it },
+            onDismiss = { showAnalysisEndDatePicker = false },
+            title = "Select Analysis End Date"
+        )
+    }
+
     // Start Date Picker Dialog
     if (showStartDatePicker) {
         DatePickerDialog(
@@ -256,6 +287,232 @@ fun SimpleMainPage(
             onDateSelected = { endDate = it },
             onDismiss = { showEndDatePicker = false },
             title = "Select End Date"
+        )
+    }
+
+    // Analysis Dialog
+    if (showAnalysisDialog) {
+        AlertDialog(
+            onDismissRequest = { showAnalysisDialog = false },
+            title = { Text("Cross-Partner Analysis") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text("Analyze total CNY/USDT sold and TZS received across all partners")
+                    Text(
+                        text = "💡 Tip: Select the same start and end date for single-day analysis",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = { showAnalysisStartDatePicker = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.DateRange, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Start: ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(analysisStartDate)}")
+                    }
+
+                    OutlinedButton(
+                        onClick = { showAnalysisEndDatePicker = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.DateRange, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("End: ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(analysisEndDate)}")
+                    }
+
+                    if (analysisStartDate.after(analysisEndDate)) {
+                        Text(
+                            text = "Warning: Start date is after end date",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else if (isSameDay(analysisStartDate, analysisEndDate)) {
+                        Text(
+                            text = "✓ Single day analysis selected",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            if (!analysisStartDate.after(analysisEndDate)) {
+                                coroutineScope.launch {
+                                    isPerformingAnalysis = true
+                                    try {
+                                        analysisResult = viewModel.performCrossPartnerAnalysis(
+                                            startDate = analysisStartDate,
+                                            endDate = analysisEndDate
+                                        )
+                                        showAnalysisResultDialog = true
+                                        showAnalysisDialog = false
+                                    } catch (e: Exception) {
+                                        // Handle error
+                                    } finally {
+                                        isPerformingAnalysis = false
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !analysisStartDate.after(analysisEndDate) && !isPerformingAnalysis
+                    ) {
+                        if (isPerformingAnalysis) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Analyzing...")
+                        } else {
+                            Icon(Icons.Filled.Info, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Perform Analysis")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAnalysisDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    // Analysis Result Dialog
+    if (showAnalysisResultDialog && analysisResult != null) {
+        // Capture the analysis result to avoid null pointer during dialog lifecycle
+        val currentAnalysisResult = analysisResult!!
+
+        AlertDialog(
+            onDismissRequest = {
+                showAnalysisResultDialog = false
+                analysisResult = null
+            },
+            title = { Text("Analysis Results") },
+            text = {
+                Card {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "📊 Period: ${currentAnalysisResult.dateRange}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Divider()
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    text = "💰 Total TZS Received",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = formatNumberWithCommas(currentAnalysisResult.totalTzsReceived),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "🇨🇳 CNY Sold",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = formatNumberWithCommas(currentAnalysisResult.totalCnySold),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Text(
+                                    text = "${currentAnalysisResult.cnyTransactions} transactions",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "💵 USDT Sold",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = formatNumberWithCommas(currentAnalysisResult.totalUsdtSold),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                                Text(
+                                    text = "${currentAnalysisResult.usdtTransactions} transactions",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Divider()
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "📈 Total Transactions:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "${currentAnalysisResult.totalTransactions}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAnalysisResultDialog = false
+                    analysisResult = null
+                }) {
+                    Text("Close")
+                }
+            },
+            icon = {
+                Icon(
+                    Icons.Filled.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         )
     }
 
@@ -494,6 +751,13 @@ fun SimpleMainPage(
                             text = "Warning: Start date is after end date",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
+                        )
+                    } else if (isSameDay(startDate, endDate)) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "✓ Single day report selected",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
 
@@ -1069,6 +1333,19 @@ fun SimpleMainPage(
                         Text("Get Date Range Report")
                     }
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // NEW ANALYSIS BUTTON
+                    OutlinedButton(
+                        onClick = { showAnalysisDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = partners.isNotEmpty()
+                    ) {
+                        Icon(Icons.Filled.Info, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Analysis")
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Backup and Restore section
@@ -1122,10 +1399,17 @@ fun SimpleMainPage(
                         Text(if (isRestoringBackup) "Restoring..." else "Import Backup")
                     }
 
-                    if (selectedPartnerId == 0L) {
+                    if (selectedPartnerId == 0L && partners.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Please select a partner to enable actions",
+                            text = "Please select a partner to enable partner-specific actions",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (partners.isEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Add partners to enable analysis and reporting features",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1375,6 +1659,14 @@ private fun getMaxDayOfMonth(year: Int, month: Int): Int {
     val calendar = java.util.Calendar.getInstance()
     calendar.set(year, month, 1)
     return calendar.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+}
+
+private fun isSameDay(date1: Date, date2: Date): Boolean {
+    val cal1 = java.util.Calendar.getInstance().apply { time = date1 }
+    val cal2 = java.util.Calendar.getInstance().apply { time = date2 }
+
+    return cal1.get(java.util.Calendar.YEAR) == cal2.get(java.util.Calendar.YEAR) &&
+            cal1.get(java.util.Calendar.DAY_OF_YEAR) == cal2.get(java.util.Calendar.DAY_OF_YEAR)
 }
 
 private fun formatNumberWithCommas(number: Double): String {

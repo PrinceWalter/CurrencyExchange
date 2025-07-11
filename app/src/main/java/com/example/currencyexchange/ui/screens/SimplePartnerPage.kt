@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.semantics.Role
@@ -104,24 +105,27 @@ fun SimplePartnerPage(
         transactionRows = transactionRows.map { if (it.id == rowId) updatedRow else it }
     }
 
-    // Helper function to format number with commas
+    // Improved helper function to format number with commas (better decimal handling)
     fun formatWithCommas(number: String): String {
         if (number.isBlank()) return ""
 
-        // Remove existing commas and non-numeric characters except dots
+        // Remove existing commas and validate
         val cleanNumber = number.replace(",", "").filter { it.isDigit() || it == '.' }
-
         if (cleanNumber.isBlank()) return ""
 
-        // Split by decimal point if exists
+        // Handle decimal point
         val parts = cleanNumber.split(".")
         val integerPart = parts[0]
-        val decimalPart = if (parts.size > 1) parts[1] else ""
+        val decimalPart = if (parts.size > 1) ".${parts[1]}" else ""
 
-        // Add commas to integer part
-        val formattedInteger = integerPart.reversed().chunked(3).joinToString(",").reversed()
+        // Add commas to integer part only if it's longer than 3 digits
+        val formattedInteger = if (integerPart.length > 3) {
+            integerPart.reversed().chunked(3).joinToString(",").reversed()
+        } else {
+            integerPart
+        }
 
-        return if (decimalPart.isNotEmpty()) "$formattedInteger.$decimalPart" else formattedInteger
+        return "$formattedInteger$decimalPart"
     }
 
     // Helper function to remove commas for parsing
@@ -180,6 +184,16 @@ fun SimplePartnerPage(
 
     // Edit Transaction Dialog (without notes)
     if (showEditDialog && editingTransaction != null) {
+        // Initialize edit fields with formatted values when dialog opens
+        LaunchedEffect(editingTransaction) {
+            editingTransaction?.let { transaction ->
+                editTzsReceived = formatWithCommas(transaction.tzsReceived.toString())
+                editForeignAmount = formatWithCommas(transaction.foreignGiven.toString())
+                editForeignCurrency = transaction.foreignCurrency
+                editExchangeRate = transaction.exchangeRate.toString()
+            }
+        }
+
         AlertDialog(
             onDismissRequest = {
                 showEditDialog = false
@@ -190,24 +204,80 @@ fun SimplePartnerPage(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    var isFocusedTzs by remember { mutableStateOf(false) }
+
                     OutlinedTextField(
                         value = editTzsReceived,
-                        onValueChange = { editTzsReceived = it },
+                        onValueChange = { newValue ->
+                            // Allow typing without immediate formatting to prevent cursor jumping
+                            val cleanValue = newValue.replace(",", "")
+                            if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                editTzsReceived = newValue
+                            }
+                        },
                         label = { Text("TZS Received", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { focusState ->
+                                val wasFocused = isFocusedTzs
+                                isFocusedTzs = focusState.isFocused
+
+                                if (wasFocused && !focusState.isFocused) {
+                                    // Field just lost focus - format with commas
+                                    if (editTzsReceived.isNotBlank()) {
+                                        val formatted = formatWithCommas(editTzsReceived)
+                                        if (formatted != editTzsReceived) {
+                                            editTzsReceived = formatted
+                                        }
+                                    }
+                                } else if (!wasFocused && focusState.isFocused) {
+                                    // Field just gained focus - remove commas
+                                    if (editTzsReceived.isNotBlank() && editTzsReceived.contains(",")) {
+                                        editTzsReceived = removeCommas(editTzsReceived)
+                                    }
+                                }
+                            },
                         textStyle = LocalTextStyle.current.copy(fontSize = 16.sp)
                     )
 
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        var isFocusedForeign by remember { mutableStateOf(false) }
+
                         OutlinedTextField(
                             value = editForeignAmount,
-                            onValueChange = { editForeignAmount = it },
+                            onValueChange = { newValue ->
+                                // Allow typing without immediate formatting
+                                val cleanValue = newValue.replace(",", "")
+                                if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                    editForeignAmount = newValue
+                                }
+                            },
                             label = { Text("${editForeignCurrency} Amount", fontSize = 12.sp) },
                             singleLine = true,
-                            modifier = Modifier.weight(2f),
+                            modifier = Modifier
+                                .weight(2f)
+                                .onFocusChanged { focusState ->
+                                    val wasFocused = isFocusedForeign
+                                    isFocusedForeign = focusState.isFocused
+
+                                    if (wasFocused && !focusState.isFocused) {
+                                        // Field just lost focus - format with commas
+                                        if (editForeignAmount.isNotBlank()) {
+                                            val formatted = formatWithCommas(editForeignAmount)
+                                            if (formatted != editForeignAmount) {
+                                                editForeignAmount = formatted
+                                            }
+                                        }
+                                    } else if (!wasFocused && focusState.isFocused) {
+                                        // Field just gained focus - remove commas
+                                        if (editForeignAmount.isNotBlank() && editForeignAmount.contains(",")) {
+                                            editForeignAmount = removeCommas(editForeignAmount)
+                                        }
+                                    }
+                                },
                             textStyle = LocalTextStyle.current.copy(fontSize = 16.sp)
                         )
 
@@ -217,7 +287,7 @@ fun SimplePartnerPage(
                             label = { Text("Rate", fontSize = 12.sp) },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
-                            textStyle = LocalTextStyle.current.copy(fontSize = 16.sp)
+                            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp) // Smaller font for rate
                         )
                     }
 
@@ -736,7 +806,7 @@ fun SimplePartnerPage(
                             Spacer(modifier = Modifier.width(32.dp)) // Space for delete button
                         }
 
-                        // Optimized Table Rows
+                        // Optimized Table Rows - FIXED FOR CURSOR LAG
                         transactionRows.forEachIndexed { index, row ->
                             Row(
                                 modifier = Modifier
@@ -746,20 +816,48 @@ fun SimplePartnerPage(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // TZS Column (Optimized for 9 digits)
+                                // TZS Column (Smart comma formatting - improved)
+                                var isFocused by remember { mutableStateOf(false) }
+
                                 OutlinedTextField(
                                     value = row.tzs,
                                     onValueChange = { newValue ->
-                                        val formattedValue = formatWithCommas(newValue)
-                                        updateRow(row.id, row.copy(tzs = formattedValue))
+                                        // Allow typing without immediate formatting to prevent cursor jumping
+                                        val cleanValue = newValue.replace(",", "")
+                                        if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                            updateRow(row.id, row.copy(tzs = newValue))
+                                        }
                                     },
                                     placeholder = { Text("0", fontSize = 12.sp) },
                                     singleLine = true,
-                                    modifier = Modifier.weight(3.5f),
+                                    modifier = Modifier
+                                        .weight(3.5f)
+                                        .onFocusChanged { focusState ->
+                                            val wasFocused = isFocused
+                                            isFocused = focusState.isFocused
+
+                                            if (wasFocused && !focusState.isFocused) {
+                                                // Field just lost focus - format with commas
+                                                val currentValue = row.tzs
+                                                if (currentValue.isNotBlank()) {
+                                                    val formatted = formatWithCommas(currentValue)
+                                                    if (formatted != currentValue) {
+                                                        updateRow(row.id, row.copy(tzs = formatted))
+                                                    }
+                                                }
+                                            } else if (!wasFocused && focusState.isFocused) {
+                                                // Field just gained focus - remove commas
+                                                val currentValue = row.tzs
+                                                if (currentValue.isNotBlank() && currentValue.contains(",")) {
+                                                    val clean = removeCommas(currentValue)
+                                                    updateRow(row.id, row.copy(tzs = clean))
+                                                }
+                                            }
+                                        },
                                     textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
                                 )
 
-                                // CNY/USDT Column (Optimized for 6 digits)
+                                // CNY/USDT Column (Fixed cursor lag)
                                 Column(
                                     modifier = Modifier.weight(2.5f)
                                 ) {
@@ -800,32 +898,60 @@ fun SimplePartnerPage(
                                         }
                                     }
 
-                                    // Amount field with comma formatting
+                                    // Amount field (Smart comma formatting - improved)
+                                    var isFocusedAmount by remember { mutableStateOf(false) }
+
                                     OutlinedTextField(
                                         value = row.foreignAmount,
                                         onValueChange = { newValue ->
-                                            val formattedValue = formatWithCommas(newValue)
-                                            updateRow(row.id, row.copy(foreignAmount = formattedValue))
+                                            // Allow typing without immediate formatting
+                                            val cleanValue = newValue.replace(",", "")
+                                            if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                                updateRow(row.id, row.copy(foreignAmount = newValue))
+                                            }
                                         },
                                         placeholder = { Text("0", fontSize = 12.sp) },
                                         singleLine = true,
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .onFocusChanged { focusState ->
+                                                val wasFocused = isFocusedAmount
+                                                isFocusedAmount = focusState.isFocused
+
+                                                if (wasFocused && !focusState.isFocused) {
+                                                    // Field just lost focus - format with commas
+                                                    val currentValue = row.foreignAmount
+                                                    if (currentValue.isNotBlank()) {
+                                                        val formatted = formatWithCommas(currentValue)
+                                                        if (formatted != currentValue) {
+                                                            updateRow(row.id, row.copy(foreignAmount = formatted))
+                                                        }
+                                                    }
+                                                } else if (!wasFocused && focusState.isFocused) {
+                                                    // Field just gained focus - remove commas
+                                                    val currentValue = row.foreignAmount
+                                                    if (currentValue.isNotBlank() && currentValue.contains(",")) {
+                                                        val clean = removeCommas(currentValue)
+                                                        updateRow(row.id, row.copy(foreignAmount = clean))
+                                                    }
+                                                }
+                                            },
                                         textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
                                     )
                                 }
 
-                                // RATE Column (Optimized for 3 digits)
+                                // RATE Column (Smaller font for better fit)
                                 OutlinedTextField(
                                     value = row.rate,
                                     onValueChange = {
                                         updateRow(row.id, row.copy(rate = it))
                                     },
                                     placeholder = {
-                                        Text(if (row.currency == "CNY") defaultCnyRate else defaultUsdtRate, fontSize = 12.sp)
+                                        Text(if (row.currency == "CNY") defaultCnyRate else defaultUsdtRate, fontSize = 10.sp)
                                     },
                                     singleLine = true,
                                     modifier = Modifier.weight(1.5f),
-                                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+                                    textStyle = LocalTextStyle.current.copy(fontSize = 12.sp) // Smaller font for rate
                                 )
 
                                 // Delete button
@@ -934,7 +1060,7 @@ private fun TransactionDateGroup(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Optimized Table Header
+            // Optimized Table Header (matching main table)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -945,7 +1071,7 @@ private fun TransactionDateGroup(
             ) {
                 Text(
                     text = "TZS",
-                    modifier = Modifier.weight(2.5f),
+                    modifier = Modifier.weight(3.5f), // Match main table
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
@@ -953,7 +1079,7 @@ private fun TransactionDateGroup(
                 )
                 Text(
                     text = "CNY/USDT",
-                    modifier = Modifier.weight(2f),
+                    modifier = Modifier.weight(2.5f), // Match main table
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
@@ -961,7 +1087,7 @@ private fun TransactionDateGroup(
                 )
                 Text(
                     text = "RATE",
-                    modifier = Modifier.weight(1.5f),
+                    modifier = Modifier.weight(1.5f), // Match main table
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
@@ -978,7 +1104,7 @@ private fun TransactionDateGroup(
                 Spacer(modifier = Modifier.width(64.dp)) // Space for action buttons
             }
 
-            // Transaction Rows
+            // Transaction Rows (Fixed cursor lag in edit mode)
             transactions.forEach { transaction ->
                 val isEditing = editingTransactionId == transaction.id
                 val editData = editingValues[transaction.id]
@@ -992,21 +1118,50 @@ private fun TransactionDateGroup(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (isEditing && editData != null) {
-                        // Editable TZS field
+                        // Editable TZS field (matching main table style)
+                        var isFocusedEditTzsList by remember { mutableStateOf(false) }
+
                         OutlinedTextField(
                             value = editData.tzs,
                             onValueChange = { newValue ->
-                                val formattedValue = formatWithCommas(newValue)
-                                editingValues = editingValues + (transaction.id to editData.copy(tzs = formattedValue))
+                                // Allow typing without immediate formatting
+                                val cleanValue = newValue.replace(",", "")
+                                if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                    editingValues = editingValues + (transaction.id to editData.copy(tzs = newValue))
+                                }
                             },
+                            placeholder = { Text("0", fontSize = 12.sp) },
                             singleLine = true,
-                            modifier = Modifier.weight(2.5f),
-                            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
+                            modifier = Modifier
+                                .weight(3.5f) // Match main table
+                                .onFocusChanged { focusState ->
+                                    val wasFocused = isFocusedEditTzsList
+                                    isFocusedEditTzsList = focusState.isFocused
+
+                                    if (wasFocused && !focusState.isFocused) {
+                                        // Field just lost focus - format with commas
+                                        val currentValue = editData.tzs
+                                        if (currentValue.isNotBlank()) {
+                                            val formatted = formatWithCommas(currentValue)
+                                            if (formatted != currentValue) {
+                                                editingValues = editingValues + (transaction.id to editData.copy(tzs = formatted))
+                                            }
+                                        }
+                                    } else if (!wasFocused && focusState.isFocused) {
+                                        // Field just gained focus - remove commas
+                                        val currentValue = editData.tzs
+                                        if (currentValue.isNotBlank() && currentValue.contains(",")) {
+                                            val clean = removeCommas(currentValue)
+                                            editingValues = editingValues + (transaction.id to editData.copy(tzs = clean))
+                                        }
+                                    }
+                                },
+                            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp) // Match main table
                         )
 
-                        // Editable Currency/Amount
+                        // Editable Currency/Amount (matching main table style)
                         Column(
-                            modifier = Modifier.weight(2f)
+                            modifier = Modifier.weight(2.5f) // Match main table
                         ) {
                             var expanded by remember { mutableStateOf(false) }
                             ExposedDropdownMenuBox(
@@ -1022,7 +1177,7 @@ private fun TransactionDateGroup(
                                         ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
                                     },
                                     modifier = Modifier.menuAnchor().fillMaxWidth(),
-                                    textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp) // Match main table
                                 )
                                 ExposedDropdownMenu(
                                     expanded = expanded,
@@ -1040,30 +1195,60 @@ private fun TransactionDateGroup(
                                 }
                             }
 
+                            var isFocusedEditForeignList by remember { mutableStateOf(false) }
+
                             OutlinedTextField(
                                 value = editData.foreignAmount,
                                 onValueChange = { newValue ->
-                                    val formattedValue = formatWithCommas(newValue)
-                                    editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = formattedValue))
+                                    // Allow typing without immediate formatting
+                                    val cleanValue = newValue.replace(",", "")
+                                    if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                        editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = newValue))
+                                    }
                                 },
+                                placeholder = { Text("0", fontSize = 12.sp) },
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onFocusChanged { focusState ->
+                                        val wasFocused = isFocusedEditForeignList
+                                        isFocusedEditForeignList = focusState.isFocused
+
+                                        if (wasFocused && !focusState.isFocused) {
+                                            // Field just lost focus - format with commas
+                                            val currentValue = editData.foreignAmount
+                                            if (currentValue.isNotBlank()) {
+                                                val formatted = formatWithCommas(currentValue)
+                                                if (formatted != currentValue) {
+                                                    editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = formatted))
+                                                }
+                                            }
+                                        } else if (!wasFocused && focusState.isFocused) {
+                                            // Field just gained focus - remove commas
+                                            val currentValue = editData.foreignAmount
+                                            if (currentValue.isNotBlank() && currentValue.contains(",")) {
+                                                val clean = removeCommas(currentValue)
+                                                editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = clean))
+                                            }
+                                        }
+                                    },
+                                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp) // Match main table
                             )
                         }
 
-                        // Editable Rate
+                        // Editable Rate (matching main table style)
                         OutlinedTextField(
                             value = editData.rate,
                             onValueChange = { newValue ->
                                 editingValues = editingValues + (transaction.id to editData.copy(rate = newValue))
                             },
+                            placeholder = { Text("376", fontSize = 10.sp) }, // Match main table
                             singleLine = true,
-                            modifier = Modifier.weight(1.5f),
-                            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
+                            modifier = Modifier.weight(1.5f), // Match main table
+                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp) // Smaller font for rate - match main table
                         )
 
-                        // Net TZS (calculated)
+                        // Net TZS (calculated - updated to handle commas properly)
                         val calculatedNetTzs = (removeCommas(editData.tzs).toDoubleOrNull() ?: 0.0) -
                                 ((removeCommas(editData.foreignAmount).toDoubleOrNull() ?: 0.0) * (editData.rate.toDoubleOrNull() ?: 0.0))
 
@@ -1120,17 +1305,17 @@ private fun TransactionDateGroup(
                             }
                         }
                     } else {
-                        // Display mode
+                        // Display mode (with proper comma formatting - matching main table layout)
                         Text(
                             text = formatWithCommas(transaction.tzsReceived.toLong().toString()),
-                            modifier = Modifier.weight(2.5f),
+                            modifier = Modifier.weight(3.5f), // Match main table
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodySmall,
                             fontSize = 10.sp
                         )
 
                         Column(
-                            modifier = Modifier.weight(2f),
+                            modifier = Modifier.weight(2.5f), // Match main table
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
@@ -1167,7 +1352,7 @@ private fun TransactionDateGroup(
                         Row {
                             IconButton(
                                 onClick = {
-                                    // Start editing
+                                    // Start editing (with comma-formatted values to match main table)
                                     editingTransactionId = transaction.id
                                     editingValues = editingValues + (transaction.id to EditableTransactionData(
                                         tzs = formatWithCommas(transaction.tzsReceived.toLong().toString()),
