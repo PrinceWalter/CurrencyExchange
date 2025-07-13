@@ -182,7 +182,7 @@ fun SimplePartnerPage(
         )
     }
 
-    // Edit Transaction Dialog (without notes)
+    // Edit Transaction Dialog (without notes) - FIXED FOCUS STATES
     if (showEditDialog && editingTransaction != null) {
         // Initialize edit fields with formatted values when dialog opens
         LaunchedEffect(editingTransaction) {
@@ -204,6 +204,7 @@ fun SimplePartnerPage(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // TZS Field - FIXED FOCUS STATE
                     var isFocusedTzs by remember { mutableStateOf(false) }
 
                     OutlinedTextField(
@@ -244,6 +245,7 @@ fun SimplePartnerPage(
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        // Foreign Amount Field - FIXED FOCUS STATE
                         var isFocusedForeign by remember { mutableStateOf(false) }
 
                         OutlinedTextField(
@@ -316,8 +318,8 @@ fun SimplePartnerPage(
                     }
 
                     // Show calculated net values
-                    val calcTzs = (editTzsReceived.toDoubleOrNull() ?: 0.0) -
-                            ((editForeignAmount.toDoubleOrNull() ?: 0.0) * (editExchangeRate.toDoubleOrNull() ?: 0.0))
+                    val calcTzs = (removeCommas(editTzsReceived).toDoubleOrNull() ?: 0.0) -
+                            ((removeCommas(editForeignAmount).toDoubleOrNull() ?: 0.0) * (editExchangeRate.toDoubleOrNull() ?: 0.0))
                     val calcForeign = if ((editExchangeRate.toDoubleOrNull() ?: 0.0) > 0) {
                         calcTzs / (editExchangeRate.toDoubleOrNull() ?: 1.0)
                     } else 0.0
@@ -355,8 +357,8 @@ fun SimplePartnerPage(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val newTzsReceived = editTzsReceived.toDoubleOrNull()
-                        val newForeignAmount = editForeignAmount.toDoubleOrNull()
+                        val newTzsReceived = removeCommas(editTzsReceived).toDoubleOrNull()
+                        val newForeignAmount = removeCommas(editForeignAmount).toDoubleOrNull()
                         val newExchangeRate = editExchangeRate.toDoubleOrNull()
 
                         if (newTzsReceived != null && newForeignAmount != null && newExchangeRate != null && newExchangeRate > 0) {
@@ -742,7 +744,7 @@ fun SimplePartnerPage(
                     }
                 }
 
-                // Optimized Transaction Table Section
+                // Optimized Transaction Table Section - FIXED FOCUS STATES
                 Card {
                     Column(
                         modifier = Modifier.padding(12.dp)
@@ -806,7 +808,7 @@ fun SimplePartnerPage(
                             Spacer(modifier = Modifier.width(32.dp)) // Space for delete button
                         }
 
-                        // Optimized Table Rows - FIXED FOR CURSOR LAG
+                        // Optimized Table Rows - FIXED FOR CURSOR LAG AND FOCUS STATE
                         transactionRows.forEachIndexed { index, row ->
                             Row(
                                 modifier = Modifier
@@ -816,13 +818,12 @@ fun SimplePartnerPage(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // TZS Column (Smart comma formatting - improved)
-                                var isFocused by remember { mutableStateOf(false) }
+                                // TZS Column - FIXED with proper keying
+                                var isFocused by remember(row.id) { mutableStateOf(false) }
 
                                 OutlinedTextField(
                                     value = row.tzs,
                                     onValueChange = { newValue ->
-                                        // Allow typing without immediate formatting to prevent cursor jumping
                                         val cleanValue = newValue.replace(",", "")
                                         if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
                                             updateRow(row.id, row.copy(tzs = newValue))
@@ -837,7 +838,6 @@ fun SimplePartnerPage(
                                             isFocused = focusState.isFocused
 
                                             if (wasFocused && !focusState.isFocused) {
-                                                // Field just lost focus - format with commas
                                                 val currentValue = row.tzs
                                                 if (currentValue.isNotBlank()) {
                                                     val formatted = formatWithCommas(currentValue)
@@ -846,7 +846,6 @@ fun SimplePartnerPage(
                                                     }
                                                 }
                                             } else if (!wasFocused && focusState.isFocused) {
-                                                // Field just gained focus - remove commas
                                                 val currentValue = row.tzs
                                                 if (currentValue.isNotBlank() && currentValue.contains(",")) {
                                                     val clean = removeCommas(currentValue)
@@ -857,12 +856,9 @@ fun SimplePartnerPage(
                                     textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
                                 )
 
-                                // CNY/USDT Column (Fixed cursor lag)
-                                Column(
-                                    modifier = Modifier.weight(2.5f)
-                                ) {
-                                    // Currency selector
-                                    var expanded by remember { mutableStateOf(false) }
+                                // CNY/USDT Column
+                                Column(modifier = Modifier.weight(2.5f)) {
+                                    var expanded by remember(row.id) { mutableStateOf(false) }
                                     ExposedDropdownMenuBox(
                                         expanded = expanded,
                                         onExpandedChange = { expanded = !expanded },
@@ -873,13 +869,9 @@ fun SimplePartnerPage(
                                             onValueChange = { },
                                             readOnly = true,
                                             trailingIcon = {
-                                                ExposedDropdownMenuDefaults.TrailingIcon(
-                                                    expanded = expanded
-                                                )
+                                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
                                             },
-                                            modifier = Modifier
-                                                .menuAnchor()
-                                                .fillMaxWidth(),
+                                            modifier = Modifier.menuAnchor().fillMaxWidth(),
                                             textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
                                         )
                                         ExposedDropdownMenu(
@@ -898,13 +890,12 @@ fun SimplePartnerPage(
                                         }
                                     }
 
-                                    // Amount field (Smart comma formatting - improved)
-                                    var isFocusedAmount by remember { mutableStateOf(false) }
+                                    // Amount field - FIXED with proper keying
+                                    var isFocusedAmount by remember(row.id) { mutableStateOf(false) }
 
                                     OutlinedTextField(
                                         value = row.foreignAmount,
                                         onValueChange = { newValue ->
-                                            // Allow typing without immediate formatting
                                             val cleanValue = newValue.replace(",", "")
                                             if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
                                                 updateRow(row.id, row.copy(foreignAmount = newValue))
@@ -919,7 +910,6 @@ fun SimplePartnerPage(
                                                 isFocusedAmount = focusState.isFocused
 
                                                 if (wasFocused && !focusState.isFocused) {
-                                                    // Field just lost focus - format with commas
                                                     val currentValue = row.foreignAmount
                                                     if (currentValue.isNotBlank()) {
                                                         val formatted = formatWithCommas(currentValue)
@@ -928,7 +918,6 @@ fun SimplePartnerPage(
                                                         }
                                                     }
                                                 } else if (!wasFocused && focusState.isFocused) {
-                                                    // Field just gained focus - remove commas
                                                     val currentValue = row.foreignAmount
                                                     if (currentValue.isNotBlank() && currentValue.contains(",")) {
                                                         val clean = removeCommas(currentValue)
@@ -940,18 +929,16 @@ fun SimplePartnerPage(
                                     )
                                 }
 
-                                // RATE Column (Smaller font for better fit)
+                                // RATE Column
                                 OutlinedTextField(
                                     value = row.rate,
-                                    onValueChange = {
-                                        updateRow(row.id, row.copy(rate = it))
-                                    },
+                                    onValueChange = { updateRow(row.id, row.copy(rate = it)) },
                                     placeholder = {
                                         Text(if (row.currency == "CNY") defaultCnyRate else defaultUsdtRate, fontSize = 10.sp)
                                     },
                                     singleLine = true,
                                     modifier = Modifier.weight(1.5f),
-                                    textStyle = LocalTextStyle.current.copy(fontSize = 12.sp) // Smaller font for rate
+                                    textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
                                 )
 
                                 // Delete button
@@ -963,10 +950,8 @@ fun SimplePartnerPage(
                                     Icon(
                                         Icons.Filled.Delete,
                                         contentDescription = "Delete row",
-                                        tint = if (transactionRows.size > 1)
-                                            MaterialTheme.colorScheme.error
-                                        else
-                                            MaterialTheme.colorScheme.onSurfaceVariant,
+                                        tint = if (transactionRows.size > 1) MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1060,51 +1045,51 @@ private fun TransactionDateGroup(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Optimized Table Header (matching main table)
+            // Elastic Table Header (removed NET TZS column)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.primaryContainer)
                     .border(1.dp, MaterialTheme.colorScheme.outline)
-                    .padding(6.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "TZS",
-                    modifier = Modifier.weight(3.5f), // Match main table
+                    text = "TZS Received",
+                    modifier = Modifier.weight(3f),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
-                    fontSize = 10.sp
+                    fontSize = 11.sp
                 )
                 Text(
-                    text = "CNY/USDT",
-                    modifier = Modifier.weight(2.5f), // Match main table
+                    text = "Foreign Amount",
+                    modifier = Modifier.weight(3f),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
-                    fontSize = 10.sp
+                    fontSize = 11.sp
                 )
                 Text(
-                    text = "RATE",
-                    modifier = Modifier.weight(1.5f), // Match main table
+                    text = "Currency",
+                    modifier = Modifier.weight(1.5f),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
-                    fontSize = 10.sp
+                    fontSize = 11.sp
                 )
                 Text(
-                    text = "NET TZS",
+                    text = "Rate",
                     modifier = Modifier.weight(2f),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
-                    fontSize = 10.sp
+                    fontSize = 11.sp
                 )
-                Spacer(modifier = Modifier.width(64.dp)) // Space for action buttons
+                Spacer(modifier = Modifier.width(80.dp)) // Space for action buttons
             }
 
-            // Transaction Rows (Fixed cursor lag in edit mode)
+            // Transaction Rows - Elastic layout without NET TZS column
             transactions.forEach { transaction ->
                 val isEditing = editingTransactionId == transaction.id
                 val editData = editingValues[transaction.id]
@@ -1113,33 +1098,32 @@ private fun TransactionDateGroup(
                     modifier = Modifier
                         .fillMaxWidth()
                         .border(1.dp, MaterialTheme.colorScheme.outline)
-                        .padding(6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (isEditing && editData != null) {
-                        // Editable TZS field (matching main table style)
-                        var isFocusedEditTzsList by remember { mutableStateOf(false) }
+                        // Editable TZS field - Elastic sizing
+                        var isFocusedEditTzsList by remember(transaction.id) { mutableStateOf(false) }
 
                         OutlinedTextField(
                             value = editData.tzs,
                             onValueChange = { newValue ->
-                                // Allow typing without immediate formatting
                                 val cleanValue = newValue.replace(",", "")
                                 if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
                                     editingValues = editingValues + (transaction.id to editData.copy(tzs = newValue))
                                 }
                             },
-                            placeholder = { Text("0", fontSize = 12.sp) },
+                            label = { Text("TZS", fontSize = 10.sp) },
                             singleLine = true,
                             modifier = Modifier
-                                .weight(3.5f) // Match main table
+                                .weight(3f)
+                                .widthIn(min = 80.dp)
                                 .onFocusChanged { focusState ->
                                     val wasFocused = isFocusedEditTzsList
                                     isFocusedEditTzsList = focusState.isFocused
 
                                     if (wasFocused && !focusState.isFocused) {
-                                        // Field just lost focus - format with commas
                                         val currentValue = editData.tzs
                                         if (currentValue.isNotBlank()) {
                                             val formatted = formatWithCommas(currentValue)
@@ -1148,7 +1132,6 @@ private fun TransactionDateGroup(
                                             }
                                         }
                                     } else if (!wasFocused && focusState.isFocused) {
-                                        // Field just gained focus - remove commas
                                         val currentValue = editData.tzs
                                         if (currentValue.isNotBlank() && currentValue.contains(",")) {
                                             val clean = removeCommas(currentValue)
@@ -1156,113 +1139,100 @@ private fun TransactionDateGroup(
                                         }
                                     }
                                 },
-                            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp) // Match main table
+                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
                         )
 
-                        // Editable Currency/Amount (matching main table style)
-                        Column(
-                            modifier = Modifier.weight(2.5f) // Match main table
-                        ) {
-                            var expanded by remember { mutableStateOf(false) }
-                            ExposedDropdownMenuBox(
-                                expanded = expanded,
-                                onExpandedChange = { expanded = !expanded },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                OutlinedTextField(
-                                    value = editData.currency,
-                                    onValueChange = { },
-                                    readOnly = true,
-                                    trailingIcon = {
-                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-                                    },
-                                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp) // Match main table
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = expanded,
-                                    onDismissRequest = { expanded = false }
-                                ) {
-                                    listOf("CNY", "USDT").forEach { currency ->
-                                        DropdownMenuItem(
-                                            text = { Text(currency, fontSize = 12.sp) },
-                                            onClick = {
-                                                editingValues = editingValues + (transaction.id to editData.copy(currency = currency))
-                                                expanded = false
-                                            }
-                                        )
-                                    }
+                        // Editable Foreign Amount field - Elastic sizing
+                        var isFocusedEditForeignList by remember(transaction.id) { mutableStateOf(false) }
+
+                        OutlinedTextField(
+                            value = editData.foreignAmount,
+                            onValueChange = { newValue ->
+                                val cleanValue = newValue.replace(",", "")
+                                if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                    editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = newValue))
                                 }
-                            }
+                            },
+                            label = { Text("${editData.currency}", fontSize = 10.sp) },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(3f)
+                                .widthIn(min = 80.dp)
+                                .onFocusChanged { focusState ->
+                                    val wasFocused = isFocusedEditForeignList
+                                    isFocusedEditForeignList = focusState.isFocused
 
-                            var isFocusedEditForeignList by remember { mutableStateOf(false) }
-
-                            OutlinedTextField(
-                                value = editData.foreignAmount,
-                                onValueChange = { newValue ->
-                                    // Allow typing without immediate formatting
-                                    val cleanValue = newValue.replace(",", "")
-                                    if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
-                                        editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = newValue))
-                                    }
-                                },
-                                placeholder = { Text("0", fontSize = 12.sp) },
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .onFocusChanged { focusState ->
-                                        val wasFocused = isFocusedEditForeignList
-                                        isFocusedEditForeignList = focusState.isFocused
-
-                                        if (wasFocused && !focusState.isFocused) {
-                                            // Field just lost focus - format with commas
-                                            val currentValue = editData.foreignAmount
-                                            if (currentValue.isNotBlank()) {
-                                                val formatted = formatWithCommas(currentValue)
-                                                if (formatted != currentValue) {
-                                                    editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = formatted))
-                                                }
-                                            }
-                                        } else if (!wasFocused && focusState.isFocused) {
-                                            // Field just gained focus - remove commas
-                                            val currentValue = editData.foreignAmount
-                                            if (currentValue.isNotBlank() && currentValue.contains(",")) {
-                                                val clean = removeCommas(currentValue)
-                                                editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = clean))
+                                    if (wasFocused && !focusState.isFocused) {
+                                        val currentValue = editData.foreignAmount
+                                        if (currentValue.isNotBlank()) {
+                                            val formatted = formatWithCommas(currentValue)
+                                            if (formatted != currentValue) {
+                                                editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = formatted))
                                             }
                                         }
-                                    },
-                                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp) // Match main table
+                                    } else if (!wasFocused && focusState.isFocused) {
+                                        val currentValue = editData.foreignAmount
+                                        if (currentValue.isNotBlank() && currentValue.contains(",")) {
+                                            val clean = removeCommas(currentValue)
+                                            editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = clean))
+                                        }
+                                    }
+                                },
+                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                        )
+
+                        // Currency Selector - Compact
+                        var expanded by remember(transaction.id) { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = !expanded },
+                            modifier = Modifier.weight(1.5f)
+                        ) {
+                            OutlinedTextField(
+                                value = editData.currency,
+                                onValueChange = { },
+                                readOnly = true,
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                                },
+                                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
+                                label = { Text("Cur", fontSize = 9.sp) }
                             )
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                listOf("CNY", "USDT").forEach { currency ->
+                                    DropdownMenuItem(
+                                        text = { Text(currency, fontSize = 11.sp) },
+                                        onClick = {
+                                            editingValues = editingValues + (transaction.id to editData.copy(currency = currency))
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                            }
                         }
 
-                        // Editable Rate (matching main table style)
+                        // Editable Rate - Elastic sizing
                         OutlinedTextField(
                             value = editData.rate,
                             onValueChange = { newValue ->
                                 editingValues = editingValues + (transaction.id to editData.copy(rate = newValue))
                             },
-                            placeholder = { Text("376", fontSize = 10.sp) }, // Match main table
+                            label = { Text("Rate", fontSize = 10.sp) },
                             singleLine = true,
-                            modifier = Modifier.weight(1.5f), // Match main table
-                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp) // Smaller font for rate - match main table
-                        )
-
-                        // Net TZS (calculated - updated to handle commas properly)
-                        val calculatedNetTzs = (removeCommas(editData.tzs).toDoubleOrNull() ?: 0.0) -
-                                ((removeCommas(editData.foreignAmount).toDoubleOrNull() ?: 0.0) * (editData.rate.toDoubleOrNull() ?: 0.0))
-
-                        Text(
-                            text = formatNumber(calculatedNetTzs),
-                            modifier = Modifier.weight(2f),
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (calculatedNetTzs >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                            fontSize = 10.sp
+                            modifier = Modifier
+                                .weight(2f)
+                                .widthIn(min = 60.dp),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 11.sp)
                         )
 
                         // Action Buttons (Save/Cancel)
-                        Row {
+                        Row(
+                            modifier = Modifier.width(80.dp)
+                        ) {
                             IconButton(
                                 onClick = {
                                     // Save changes
@@ -1284,7 +1254,7 @@ private fun TransactionDateGroup(
                                     Icons.Filled.Check,
                                     contentDescription = "Save",
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
 
@@ -1300,59 +1270,59 @@ private fun TransactionDateGroup(
                                     Icons.Filled.Close,
                                     contentDescription = "Cancel",
                                     tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
                     } else {
-                        // Display mode (with proper comma formatting - matching main table layout)
+                        // Display mode - Elastic layout without NET TZS
                         Text(
                             text = formatWithCommas(transaction.tzsReceived.toLong().toString()),
-                            modifier = Modifier.weight(3.5f), // Match main table
+                            modifier = Modifier.weight(3f),
                             textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontSize = 10.sp
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
                         )
 
-                        Column(
-                            modifier = Modifier.weight(2.5f), // Match main table
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = transaction.foreignCurrency,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 9.sp
-                            )
-                            Text(
-                                text = formatWithCommas(transaction.foreignGiven.toLong().toString()),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 10.sp
-                            )
-                        }
+                        Text(
+                            text = formatWithCommas(transaction.foreignGiven.toLong().toString()),
+                            modifier = Modifier.weight(3f),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        Text(
+                            text = transaction.foreignCurrency,
+                            modifier = Modifier.weight(1.5f),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = when (transaction.foreignCurrency) {
+                                "CNY" -> MaterialTheme.colorScheme.secondary
+                                "USDT" -> MaterialTheme.colorScheme.tertiary
+                                else -> MaterialTheme.colorScheme.onSurface
+                            }
+                        )
 
                         Text(
                             text = formatNumber(transaction.exchangeRate),
-                            modifier = Modifier.weight(1.5f),
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontSize = 10.sp
-                        )
-
-                        Text(
-                            text = formatNumber(transaction.netTzs),
                             modifier = Modifier.weight(2f),
                             textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (transaction.netTzs >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                            fontSize = 10.sp
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 11.sp
                         )
 
                         // Action Buttons (Edit/Delete)
-                        Row {
+                        Row(
+                            modifier = Modifier.width(80.dp)
+                        ) {
                             IconButton(
                                 onClick = {
-                                    // Start editing (with comma-formatted values to match main table)
+                                    // Start editing with comma-formatted values
                                     editingTransactionId = transaction.id
                                     editingValues = editingValues + (transaction.id to EditableTransactionData(
                                         tzs = formatWithCommas(transaction.tzsReceived.toLong().toString()),
@@ -1368,7 +1338,7 @@ private fun TransactionDateGroup(
                                     Icons.Filled.Edit,
                                     contentDescription = "Edit",
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
 
@@ -1380,7 +1350,7 @@ private fun TransactionDateGroup(
                                     Icons.Filled.Delete,
                                     contentDescription = "Delete",
                                     tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }

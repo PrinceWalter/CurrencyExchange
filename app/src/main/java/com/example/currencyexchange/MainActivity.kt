@@ -16,6 +16,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import com.example.currencyexchange.ui.theme.CurrencyExchangeTheme
 import com.example.currencyexchange.ui.screens.SimpleMainPage
 import com.example.currencyexchange.ui.screens.SimplePartnerPage
+import com.example.currencyexchange.ui.screens.BalancesPage
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -50,6 +51,10 @@ class MainActivity : ComponentActivity() {
                                 partnerId = partnerId,
                                 navController = navController
                             )
+                        }
+
+                        composable("balances_page") {
+                            BalancesPage(navController = navController)
                         }
                     }
                 }

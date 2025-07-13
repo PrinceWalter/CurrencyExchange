@@ -25,6 +25,7 @@ import com.example.currencyexchange.viewmodel.MainViewModel
 import com.example.currencyexchange.viewmodel.AnalysisResult
 import com.example.currencyexchange.data.dao.PartnerSummary
 import com.example.currencyexchange.data.backup.RestoreResult
+
 import com.example.currencyexchange.ui.components.NetPositionItem
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1335,7 +1336,7 @@ fun SimpleMainPage(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // NEW ANALYSIS BUTTON
+                    // Analysis Button
                     OutlinedButton(
                         onClick = { showAnalysisDialog = true },
                         modifier = Modifier.fillMaxWidth(),
@@ -1397,6 +1398,18 @@ fun SimpleMainPage(
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(if (isRestoringBackup) "Restoring..." else "Import Backup")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Balances Page Button
+                    Button(
+                        onClick = { navController.navigate("balances_page") },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.Info, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("BALANCES")
                     }
 
                     if (selectedPartnerId == 0L && partners.isNotEmpty()) {
@@ -1669,7 +1682,7 @@ private fun isSameDay(date1: Date, date2: Date): Boolean {
             cal1.get(java.util.Calendar.DAY_OF_YEAR) == cal2.get(java.util.Calendar.DAY_OF_YEAR)
 }
 
-private fun formatNumberWithCommas(number: Double): String {
+fun formatNumberWithCommas(number: Double): String {
     val formatted = String.format("%.2f", number)
     val parts = formatted.split(".")
     val integerPart = parts[0]
