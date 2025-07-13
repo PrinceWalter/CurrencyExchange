@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,6 +21,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -88,6 +91,33 @@ fun SimplePartnerPage(
 
     val partnerName = partner?.name ?: "Loading..."
 
+    // Helper function to validate numeric input that allows negative numbers
+    fun isValidNumericInput(input: String): Boolean {
+        if (input.isBlank()) return true
+
+        // Remove commas for validation
+        val cleanInput = input.replace(",", "")
+
+        // Check if it's a valid number format
+        return try {
+            // Allow empty string, single minus sign, or valid number
+            when {
+                cleanInput.isEmpty() -> true
+                cleanInput == "-" -> true
+                cleanInput.matches(Regex("^-?\\d*\\.?\\d*$")) -> {
+                    // Additional check: only one decimal point and minus only at start
+                    val minusCount = cleanInput.count { it == '-' }
+                    val decimalCount = cleanInput.count { it == '.' }
+                    minusCount <= 1 && decimalCount <= 1 &&
+                            (minusCount == 0 || cleanInput.startsWith("-"))
+                }
+                else -> false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     // Helper function to add a new row
     fun addNewRow() {
         transactionRows = transactionRows + TransactionRow()
@@ -109,9 +139,13 @@ fun SimplePartnerPage(
     fun formatWithCommas(number: String): String {
         if (number.isBlank()) return ""
 
+        // Handle negative sign
+        val isNegative = number.startsWith("-")
+        val absoluteNumber = if (isNegative) number.substring(1) else number
+
         // Remove existing commas and validate
-        val cleanNumber = number.replace(",", "").filter { it.isDigit() || it == '.' }
-        if (cleanNumber.isBlank()) return ""
+        val cleanNumber = absoluteNumber.replace(",", "").filter { it.isDigit() || it == '.' }
+        if (cleanNumber.isBlank()) return if (isNegative) "-" else ""
 
         // Handle decimal point
         val parts = cleanNumber.split(".")
@@ -125,7 +159,8 @@ fun SimplePartnerPage(
             integerPart
         }
 
-        return "$formattedInteger$decimalPart"
+        val sign = if (isNegative) "-" else ""
+        return "$sign$formattedInteger$decimalPart"
     }
 
     // Helper function to remove commas for parsing
@@ -182,7 +217,7 @@ fun SimplePartnerPage(
         )
     }
 
-    // Edit Transaction Dialog (without notes) - FIXED FOCUS STATES
+    // Edit Transaction Dialog (without notes) - FIXED FOCUS STATES with negative number support
     if (showEditDialog && editingTransaction != null) {
         // Initialize edit fields with formatted values when dialog opens
         LaunchedEffect(editingTransaction) {
@@ -204,20 +239,23 @@ fun SimplePartnerPage(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // TZS Field - FIXED FOCUS STATE
+                    // TZS Field - FIXED FOCUS STATE with negative support
                     var isFocusedTzs by remember { mutableStateOf(false) }
 
                     OutlinedTextField(
                         value = editTzsReceived,
                         onValueChange = { newValue ->
-                            // Allow typing without immediate formatting to prevent cursor jumping
-                            val cleanValue = newValue.replace(",", "")
-                            if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                            // Allow typing negative numbers without immediate formatting
+                            if (isValidNumericInput(newValue)) {
                                 editTzsReceived = newValue
                             }
                         },
-                        label = { Text("TZS Received", fontSize = 12.sp) },
+                        label = { Text("TZS Received", fontSize = 9.sp) },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Next
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { focusState ->
@@ -226,7 +264,7 @@ fun SimplePartnerPage(
 
                                 if (wasFocused && !focusState.isFocused) {
                                     // Field just lost focus - format with commas
-                                    if (editTzsReceived.isNotBlank()) {
+                                    if (editTzsReceived.isNotBlank() && editTzsReceived != "-") {
                                         val formatted = formatWithCommas(editTzsReceived)
                                         if (formatted != editTzsReceived) {
                                             editTzsReceived = formatted
@@ -239,26 +277,29 @@ fun SimplePartnerPage(
                                     }
                                 }
                             },
-                        textStyle = LocalTextStyle.current.copy(fontSize = 16.sp)
+                        textStyle = LocalTextStyle.current.copy(fontSize = 9.sp)
                     )
 
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Foreign Amount Field - FIXED FOCUS STATE
+                        // Foreign Amount Field - FIXED FOCUS STATE with negative support
                         var isFocusedForeign by remember { mutableStateOf(false) }
 
                         OutlinedTextField(
                             value = editForeignAmount,
                             onValueChange = { newValue ->
-                                // Allow typing without immediate formatting
-                                val cleanValue = newValue.replace(",", "")
-                                if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                // Allow typing negative numbers without immediate formatting
+                                if (isValidNumericInput(newValue)) {
                                     editForeignAmount = newValue
                                 }
                             },
-                            label = { Text("${editForeignCurrency} Amount", fontSize = 12.sp) },
+                            label = { Text("${editForeignCurrency} Amount", fontSize = 9.sp) },
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Decimal,
+                                imeAction = ImeAction.Next
+                            ),
                             modifier = Modifier
                                 .weight(2f)
                                 .onFocusChanged { focusState ->
@@ -267,7 +308,7 @@ fun SimplePartnerPage(
 
                                     if (wasFocused && !focusState.isFocused) {
                                         // Field just lost focus - format with commas
-                                        if (editForeignAmount.isNotBlank()) {
+                                        if (editForeignAmount.isNotBlank() && editForeignAmount != "-") {
                                             val formatted = formatWithCommas(editForeignAmount)
                                             if (formatted != editForeignAmount) {
                                                 editForeignAmount = formatted
@@ -280,23 +321,27 @@ fun SimplePartnerPage(
                                         }
                                     }
                                 },
-                            textStyle = LocalTextStyle.current.copy(fontSize = 16.sp)
+                            textStyle = LocalTextStyle.current.copy(fontSize = 9.sp)
                         )
 
                         OutlinedTextField(
                             value = editExchangeRate,
                             onValueChange = { editExchangeRate = it },
-                            label = { Text("Rate", fontSize = 12.sp) },
+                            label = { Text("Rate", fontSize = 9.sp) },
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Decimal,
+                                imeAction = ImeAction.Done
+                            ),
                             modifier = Modifier.weight(1f),
-                            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp) // Smaller font for rate
+                            textStyle = LocalTextStyle.current.copy(fontSize = 9.sp) // Smaller font for rate
                         )
                     }
 
                     // Currency selection
                     Row(
                         modifier = Modifier.selectableGroup(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(9.dp)
                     ) {
                         listOf("CNY", "USDT").forEach { currency ->
                             Row(
@@ -312,14 +357,30 @@ fun SimplePartnerPage(
                                     onClick = null
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
-                                Text(currency, fontSize = 14.sp)
+                                Text(currency, fontSize = 9.sp)
                             }
                         }
                     }
 
                     // Show calculated net values
-                    val calcTzs = (removeCommas(editTzsReceived).toDoubleOrNull() ?: 0.0) -
-                            ((removeCommas(editForeignAmount).toDoubleOrNull() ?: 0.0) * (editExchangeRate.toDoubleOrNull() ?: 0.0))
+                    val calcTzs = when (editForeignCurrency) {
+                        "CNY" -> {
+                            // For CNY: Net = (CNY amount * Rate) - TZS received
+                            ((removeCommas(editForeignAmount).toDoubleOrNull() ?: 0.0) * (editExchangeRate.toDoubleOrNull() ?: 0.0)) -
+                                    (removeCommas(editTzsReceived).toDoubleOrNull() ?: 0.0)
+                        }
+                        "USDT" -> {
+                            // For USDT: Net = TZS received - (USDT amount * Rate) [original logic]
+                            (removeCommas(editTzsReceived).toDoubleOrNull() ?: 0.0) -
+                                    ((removeCommas(editForeignAmount).toDoubleOrNull() ?: 0.0) * (editExchangeRate.toDoubleOrNull() ?: 0.0))
+                        }
+                        else -> {
+                            // Default to USDT logic
+                            (removeCommas(editTzsReceived).toDoubleOrNull() ?: 0.0) -
+                                    ((removeCommas(editForeignAmount).toDoubleOrNull() ?: 0.0) * (editExchangeRate.toDoubleOrNull() ?: 0.0))
+                        }
+                    }
+
                     val calcForeign = if ((editExchangeRate.toDoubleOrNull() ?: 0.0) > 0) {
                         calcTzs / (editExchangeRate.toDoubleOrNull() ?: 1.0)
                     } else 0.0
@@ -330,25 +391,25 @@ fun SimplePartnerPage(
                         )
                     ) {
                         Column(
-                            modifier = Modifier.padding(8.dp)
+                            modifier = Modifier.padding(4.dp)
                         ) {
                             Text(
                                 text = "Calculated Net Values:",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
-                                fontSize = 12.sp
+                                fontSize = 9.sp
                             )
                             Text(
                                 text = "Net TZS: ${formatNumber(calcTzs)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (calcTzs >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                fontSize = 11.sp
+                                fontSize = 9.sp
                             )
                             Text(
                                 text = "Net ${editForeignCurrency}: ${formatNumber(calcForeign)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (calcForeign >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                fontSize = 11.sp
+                                fontSize = 9.sp
                             )
                         }
                     }
@@ -380,7 +441,7 @@ fun SimplePartnerPage(
                     enabled = editTzsReceived.isNotBlank() && editForeignAmount.isNotBlank() &&
                             editExchangeRate.isNotBlank() && (editExchangeRate.toDoubleOrNull() ?: 0.0) > 0
                 ) {
-                    Text("Save", fontSize = 14.sp)
+                    Text("Save", fontSize = 9.sp)
                 }
             },
             dismissButton = {
@@ -388,7 +449,7 @@ fun SimplePartnerPage(
                     showEditDialog = false
                     editingTransaction = null
                 }) {
-                    Text("Cancel", fontSize = 14.sp)
+                    Text("Cancel", fontSize = 9.sp)
                 }
             }
         )
@@ -627,7 +688,8 @@ fun SimplePartnerPage(
                                         showDeleteDialog = true
                                     },
                                     formatWithCommas = ::formatWithCommas,
-                                    removeCommas = ::removeCommas
+                                    removeCommas = ::removeCommas,
+                                    isValidNumericInput = ::isValidNumericInput
                                 )
                             }
                         }
@@ -710,6 +772,10 @@ fun SimplePartnerPage(
                                 label = { Text("CNY Rate", fontSize = 12.sp) },
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Decimal,
+                                    imeAction = ImeAction.Next
+                                ),
                                 textStyle = LocalTextStyle.current.copy(fontSize = 16.sp)
                             )
 
@@ -720,6 +786,10 @@ fun SimplePartnerPage(
                                 label = { Text("USDT Rate", fontSize = 12.sp) },
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Decimal,
+                                    imeAction = ImeAction.Done
+                                ),
                                 textStyle = LocalTextStyle.current.copy(fontSize = 16.sp)
                             )
                         }
@@ -744,7 +814,7 @@ fun SimplePartnerPage(
                     }
                 }
 
-                // Optimized Transaction Table Section - FIXED FOCUS STATES
+                // Optimized Transaction Table Section with negative toggle
                 Card {
                     Column(
                         modifier = Modifier.padding(12.dp)
@@ -772,7 +842,7 @@ fun SimplePartnerPage(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Optimized Table Header
+                        // Table Header with negative toggle indicator
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -783,7 +853,7 @@ fun SimplePartnerPage(
                         ) {
                             Text(
                                 text = "TZS",
-                                modifier = Modifier.weight(3.5f), // Larger for 9 digits
+                                modifier = Modifier.weight(3.5f),
                                 textAlign = TextAlign.Center,
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodyMedium,
@@ -791,7 +861,7 @@ fun SimplePartnerPage(
                             )
                             Text(
                                 text = "CNY/USDT",
-                                modifier = Modifier.weight(2.5f), // Medium for 6 digits
+                                modifier = Modifier.weight(2.5f),
                                 textAlign = TextAlign.Center,
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodyMedium,
@@ -799,17 +869,35 @@ fun SimplePartnerPage(
                             )
                             Text(
                                 text = "RATE",
-                                modifier = Modifier.weight(1.5f), // Smaller for 3 digits
+                                modifier = Modifier.weight(1.5f),
                                 textAlign = TextAlign.Center,
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontSize = 11.sp
                             )
-                            Spacer(modifier = Modifier.width(32.dp)) // Space for delete button
+                            // Space for negative toggle and delete button
+                            Column(
+                                modifier = Modifier.width(50.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "±",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = "DEL",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 8.sp
+                                )
+                            }
                         }
 
-                        // Optimized Table Rows - FIXED FOR CURSOR LAG AND FOCUS STATE
+                        // Transaction Rows with negative toggle
                         transactionRows.forEachIndexed { index, row ->
+                            // Track which field is focused in this row
+                            var focusedField by remember(row.id) { mutableStateOf<String?>(null) }
+
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -818,28 +906,34 @@ fun SimplePartnerPage(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // TZS Column - FIXED with proper keying
+                                // TZS Column
                                 var isFocused by remember(row.id) { mutableStateOf(false) }
 
                                 OutlinedTextField(
                                     value = row.tzs,
                                     onValueChange = { newValue ->
-                                        val cleanValue = newValue.replace(",", "")
-                                        if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                        if (isValidNumericInput(newValue)) {
                                             updateRow(row.id, row.copy(tzs = newValue))
                                         }
                                     },
                                     placeholder = { Text("0", fontSize = 12.sp) },
                                     singleLine = true,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Decimal,
+                                        imeAction = ImeAction.Next
+                                    ),
                                     modifier = Modifier
                                         .weight(3.5f)
                                         .onFocusChanged { focusState ->
                                             val wasFocused = isFocused
                                             isFocused = focusState.isFocused
 
+                                            // Update focused field tracker
+                                            focusedField = if (focusState.isFocused) "tzs" else null
+
                                             if (wasFocused && !focusState.isFocused) {
                                                 val currentValue = row.tzs
-                                                if (currentValue.isNotBlank()) {
+                                                if (currentValue.isNotBlank() && currentValue != "-") {
                                                     val formatted = formatWithCommas(currentValue)
                                                     if (formatted != currentValue) {
                                                         updateRow(row.id, row.copy(tzs = formatted))
@@ -890,28 +984,34 @@ fun SimplePartnerPage(
                                         }
                                     }
 
-                                    // Amount field - FIXED with proper keying
+                                    // Amount field
                                     var isFocusedAmount by remember(row.id) { mutableStateOf(false) }
 
                                     OutlinedTextField(
                                         value = row.foreignAmount,
                                         onValueChange = { newValue ->
-                                            val cleanValue = newValue.replace(",", "")
-                                            if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                            if (isValidNumericInput(newValue)) {
                                                 updateRow(row.id, row.copy(foreignAmount = newValue))
                                             }
                                         },
                                         placeholder = { Text("0", fontSize = 12.sp) },
                                         singleLine = true,
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = KeyboardType.Decimal,
+                                            imeAction = ImeAction.Next
+                                        ),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .onFocusChanged { focusState ->
                                                 val wasFocused = isFocusedAmount
                                                 isFocusedAmount = focusState.isFocused
 
+                                                // Update focused field tracker
+                                                focusedField = if (focusState.isFocused) "foreign" else null
+
                                                 if (wasFocused && !focusState.isFocused) {
                                                     val currentValue = row.foreignAmount
-                                                    if (currentValue.isNotBlank()) {
+                                                    if (currentValue.isNotBlank() && currentValue != "-") {
                                                         val formatted = formatWithCommas(currentValue)
                                                         if (formatted != currentValue) {
                                                             updateRow(row.id, row.copy(foreignAmount = formatted))
@@ -937,23 +1037,79 @@ fun SimplePartnerPage(
                                         Text(if (row.currency == "CNY") defaultCnyRate else defaultUsdtRate, fontSize = 10.sp)
                                     },
                                     singleLine = true,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Decimal,
+                                        imeAction = ImeAction.Done
+                                    ),
                                     modifier = Modifier.weight(1.5f),
                                     textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
                                 )
 
-                                // Delete button
-                                IconButton(
-                                    onClick = { removeRow(row.id) },
-                                    enabled = transactionRows.size > 1,
-                                    modifier = Modifier.size(32.dp)
+                                // Negative toggle and delete button column
+                                Column(
+                                    modifier = Modifier.width(50.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
-                                    Icon(
-                                        Icons.Filled.Delete,
-                                        contentDescription = "Delete row",
-                                        tint = if (transactionRows.size > 1) MaterialTheme.colorScheme.error
-                                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
+                                    // Negative toggle button
+                                    IconButton(
+                                        onClick = {
+                                            when (focusedField) {
+                                                "tzs" -> {
+                                                    val currentValue = row.tzs
+                                                    val newValue = when {
+                                                        currentValue.isBlank() -> "-"
+                                                        currentValue.startsWith("-") -> currentValue.substring(1)
+                                                        currentValue == "0" -> "-"
+                                                        else -> "-$currentValue"
+                                                    }
+                                                    updateRow(row.id, row.copy(tzs = newValue))
+                                                }
+                                                "foreign" -> {
+                                                    val currentValue = row.foreignAmount
+                                                    val newValue = when {
+                                                        currentValue.isBlank() -> "-"
+                                                        currentValue.startsWith("-") -> currentValue.substring(1)
+                                                        currentValue == "0" -> "-"
+                                                        else -> "-$currentValue"
+                                                    }
+                                                    updateRow(row.id, row.copy(foreignAmount = newValue))
+                                                }
+                                            }
+                                        },
+                                        enabled = focusedField != null,
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Add,
+                                            contentDescription = "Toggle negative",
+                                            tint = if (focusedField != null) {
+                                                val currentValue = when (focusedField) {
+                                                    "tzs" -> row.tzs
+                                                    "foreign" -> row.foreignAmount
+                                                    else -> ""
+                                                }
+                                                if (currentValue.startsWith("-")) MaterialTheme.colorScheme.error
+                                                else MaterialTheme.colorScheme.primary
+                                            } else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+
+                                    // Delete button
+                                    IconButton(
+                                        onClick = { removeRow(row.id) },
+                                        enabled = transactionRows.size > 1,
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Delete,
+                                            contentDescription = "Delete row",
+                                            tint = if (transactionRows.size > 1) MaterialTheme.colorScheme.error
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1006,7 +1162,8 @@ private fun TransactionDateGroup(
     onUpdateTransaction: (TransactionEntity) -> Unit,
     onDeleteTransaction: (TransactionEntity) -> Unit,
     formatWithCommas: (String) -> String,
-    removeCommas: (String) -> String
+    removeCommas: (String) -> String,
+    isValidNumericInput: (String) -> Boolean
 ) {
     var editingTransactionId by remember { mutableStateOf<Long?>(null) }
     var editingValues by remember { mutableStateOf(mapOf<Long, EditableTransactionData>()) }
@@ -1089,7 +1246,7 @@ private fun TransactionDateGroup(
                 Spacer(modifier = Modifier.width(80.dp)) // Space for action buttons
             }
 
-            // Transaction Rows - Elastic layout without NET TZS column
+            // Transaction Rows - Elastic layout without NET TZS column, with negative support
             transactions.forEach { transaction ->
                 val isEditing = editingTransactionId == transaction.id
                 val editData = editingValues[transaction.id]
@@ -1103,19 +1260,22 @@ private fun TransactionDateGroup(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (isEditing && editData != null) {
-                        // Editable TZS field - Elastic sizing
+                        // Editable TZS field - Elastic sizing with negative support
                         var isFocusedEditTzsList by remember(transaction.id) { mutableStateOf(false) }
 
                         OutlinedTextField(
                             value = editData.tzs,
                             onValueChange = { newValue ->
-                                val cleanValue = newValue.replace(",", "")
-                                if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                if (isValidNumericInput(newValue)) {
                                     editingValues = editingValues + (transaction.id to editData.copy(tzs = newValue))
                                 }
                             },
                             label = { Text("TZS", fontSize = 10.sp) },
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Decimal,
+                                imeAction = ImeAction.Next
+                            ),
                             modifier = Modifier
                                 .weight(3f)
                                 .widthIn(min = 80.dp)
@@ -1125,7 +1285,7 @@ private fun TransactionDateGroup(
 
                                     if (wasFocused && !focusState.isFocused) {
                                         val currentValue = editData.tzs
-                                        if (currentValue.isNotBlank()) {
+                                        if (currentValue.isNotBlank() && currentValue != "-") {
                                             val formatted = formatWithCommas(currentValue)
                                             if (formatted != currentValue) {
                                                 editingValues = editingValues + (transaction.id to editData.copy(tzs = formatted))
@@ -1142,19 +1302,22 @@ private fun TransactionDateGroup(
                             textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
                         )
 
-                        // Editable Foreign Amount field - Elastic sizing
+                        // Editable Foreign Amount field - Elastic sizing with negative support
                         var isFocusedEditForeignList by remember(transaction.id) { mutableStateOf(false) }
 
                         OutlinedTextField(
                             value = editData.foreignAmount,
                             onValueChange = { newValue ->
-                                val cleanValue = newValue.replace(",", "")
-                                if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' }) {
+                                if (isValidNumericInput(newValue)) {
                                     editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = newValue))
                                 }
                             },
                             label = { Text("${editData.currency}", fontSize = 10.sp) },
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Decimal,
+                                imeAction = ImeAction.Next
+                            ),
                             modifier = Modifier
                                 .weight(3f)
                                 .widthIn(min = 80.dp)
@@ -1164,7 +1327,7 @@ private fun TransactionDateGroup(
 
                                     if (wasFocused && !focusState.isFocused) {
                                         val currentValue = editData.foreignAmount
-                                        if (currentValue.isNotBlank()) {
+                                        if (currentValue.isNotBlank() && currentValue != "-") {
                                             val formatted = formatWithCommas(currentValue)
                                             if (formatted != currentValue) {
                                                 editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = formatted))
@@ -1223,6 +1386,10 @@ private fun TransactionDateGroup(
                             },
                             label = { Text("Rate", fontSize = 10.sp) },
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Decimal,
+                                imeAction = ImeAction.Done
+                            ),
                             modifier = Modifier
                                 .weight(2f)
                                 .widthIn(min = 60.dp),

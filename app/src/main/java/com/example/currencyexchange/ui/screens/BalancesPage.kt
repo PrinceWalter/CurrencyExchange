@@ -23,84 +23,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.example.currencyexchange.viewmodel.MainViewModel
+import com.example.currencyexchange.viewmodel.BalancesViewModel
+import com.example.currencyexchange.viewmodel.BalanceItem
 import kotlinx.coroutines.launch
-import java.util.*
-
-// Data class for balance items
-data class BalanceItem(
-    val id: String = UUID.randomUUID().toString(),
-    var description: String = "",
-    var amount: String = "",
-    var currency: String = "TZS",
-    var rate: String = "",
-    val isNetPosition: Boolean = false,
-    val isFixedType: Boolean = false // For ALIPAY (CNY) and USDT rows
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BalancesPage(
     navController: NavController,
-    viewModel: MainViewModel = hiltViewModel(),
+    viewModel: BalancesViewModel = hiltViewModel(),
     modifier: Modifier = Modifier
 ) {
-    // State for balance items
-    var balanceItems by remember { mutableStateOf(listOf<BalanceItem>()) }
-    var isLoadingNetPosition by remember { mutableStateOf(true) }
-    var netPositionTzs by remember { mutableStateOf(0.0) }
-
-    // Default rates
-    var defaultCnyRate by remember { mutableStateOf("376") }
-    var defaultUsdtRate by remember { mutableStateOf("2380") }
+    // Collect state from ViewModel
+    val balanceItems by viewModel.balanceItems.collectAsState()
+    val defaultCnyRate by viewModel.defaultCnyRate.collectAsState()
+    val defaultUsdtRate by viewModel.defaultUsdtRate.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val netPositionTzs by viewModel.netPositionTzs.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
-
-    // Load net position and default rates on startup
-    LaunchedEffect(Unit) {
-        try {
-            // Get cumulative net positions
-            val summary = viewModel.getCumulativeNetPositions()
-            netPositionTzs = summary.totalNetTzs
-
-            // Get default exchange rates
-            val rates = viewModel.getDefaultExchangeRates()
-            defaultCnyRate = rates["CNY"]?.toString() ?: "376"
-            defaultUsdtRate = rates["USDT"]?.toString() ?: "2380"
-
-            // Initialize with net position, ALIPAY, and USDT as fixed rows
-            balanceItems = listOf(
-                BalanceItem(
-                    description = "Overall Net Position",
-                    amount = formatNumberWithCommas(netPositionTzs),
-                    currency = "TZS",
-                    rate = "",
-                    isNetPosition = true,
-                    isFixedType = true
-                ),
-                BalanceItem(
-                    description = "ALIPAY",
-                    amount = "",
-                    currency = "CNY",
-                    rate = "",
-                    isFixedType = true
-                ),
-                BalanceItem(
-                    description = "USDT",
-                    amount = "",
-                    currency = "USDT",
-                    rate = "",
-                    isFixedType = true
-                ),
-                BalanceItem() // Empty TZS row to start adding balances
-            )
-
-        } catch (e: Exception) {
-            // Handle error
-        } finally {
-            isLoadingNetPosition = false
-        }
-    }
 
     // Helper functions
     fun formatNumberWithCommas(number: Double): String {
@@ -149,22 +90,6 @@ fun BalancesPage(
         return number.replace(",", "")
     }
 
-    fun updateBalanceItem(itemId: String, updatedItem: BalanceItem) {
-        balanceItems = balanceItems.map { if (it.id == itemId) updatedItem else it }
-    }
-
-    fun addNewBalanceItem() {
-        balanceItems = balanceItems + BalanceItem()
-    }
-
-    fun removeBalanceItem(itemId: String) {
-        // Don't allow removing the net position item, fixed items, or if only essential items remain
-        val item = balanceItems.find { it.id == itemId }
-        if (item != null && !item.isNetPosition && !item.isFixedType && balanceItems.size > 4) {
-            balanceItems = balanceItems.filter { it.id != itemId }
-        }
-    }
-
     // Calculate total TZS
     fun calculateTotalTzs(): Double {
         return balanceItems.sumOf { item ->
@@ -196,19 +121,41 @@ fun BalancesPage(
                 IconButton(onClick = { navController.navigateUp() }) {
                     Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
                 }
+            },
+            actions = {
+                // Add refresh button to update net position
+                IconButton(onClick = {
+                    coroutineScope.launch {
+                        viewModel.refreshNetPosition()
+                    }
+                }) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                }
+
+                // Add clear button for testing
+                IconButton(onClick = {
+                    viewModel.clearSavedState()
+                }) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Clear saved data")
+                }
             }
         )
 
-        if (isLoadingNetPosition) {
+        if (isLoading) {
             Box(
                 modifier = Modifier.fillMaxWidth().padding(24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
-                Text(
-                    text = "Loading net position...",
-                    modifier = Modifier.padding(top = 16.dp)
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        text = "Loading saved balances...",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
         } else {
             Column(
@@ -237,7 +184,7 @@ fun BalancesPage(
                         ) {
                             OutlinedTextField(
                                 value = defaultCnyRate,
-                                onValueChange = { defaultCnyRate = it },
+                                onValueChange = { viewModel.updateDefaultCnyRate(it) },
                                 label = { Text("CNY Rate", fontSize = 12.sp) },
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
@@ -246,7 +193,7 @@ fun BalancesPage(
 
                             OutlinedTextField(
                                 value = defaultUsdtRate,
-                                onValueChange = { defaultUsdtRate = it },
+                                onValueChange = { viewModel.updateDefaultUsdtRate(it) },
                                 label = { Text("USDT Rate", fontSize = 12.sp) },
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
@@ -291,7 +238,7 @@ fun BalancesPage(
                             )
 
                             Button(
-                                onClick = { addNewBalanceItem() }
+                                onClick = { viewModel.addNewBalanceItem() }
                             ) {
                                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -342,7 +289,7 @@ fun BalancesPage(
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontSize = 9.sp
                             )
-                            Spacer(modifier = Modifier.width(20.dp)) // Delete button space (smaller for Galaxy S8)
+                            Spacer(modifier = Modifier.width(20.dp)) // Delete button space
                         }
 
                         // Balance Items
@@ -373,7 +320,6 @@ fun BalancesPage(
                             ) {
                                 // Description
                                 if (item.isNetPosition || item.isFixedType) {
-                                    // Read-only for net position and fixed items
                                     Text(
                                         text = item.description,
                                         modifier = Modifier.weight(2.7f),
@@ -391,7 +337,7 @@ fun BalancesPage(
                                     OutlinedTextField(
                                         value = item.description,
                                         onValueChange = { newValue ->
-                                            updateBalanceItem(item.id, item.copy(description = newValue))
+                                            viewModel.updateBalanceItem(item.id, item.copy(description = newValue))
                                         },
                                         placeholder = { Text("", fontSize = 9.sp) },
                                         singleLine = true,
@@ -402,7 +348,6 @@ fun BalancesPage(
 
                                 // Amount (optimized for 9 digits on Galaxy S8)
                                 if (item.isNetPosition) {
-                                    // Read-only net position amount
                                     Text(
                                         text = item.amount,
                                         modifier = Modifier
@@ -422,7 +367,7 @@ fun BalancesPage(
                                         onValueChange = { newValue ->
                                             val cleanValue = newValue.replace(",", "")
                                             if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' || it == '-' }) {
-                                                updateBalanceItem(item.id, item.copy(amount = newValue))
+                                                viewModel.updateBalanceItem(item.id, item.copy(amount = newValue))
                                             }
                                         },
                                         placeholder = { Text("0.00", fontSize = 9.sp) },
@@ -439,14 +384,14 @@ fun BalancesPage(
                                                     if (currentValue.isNotBlank()) {
                                                         val formatted = formatWithCommas(currentValue)
                                                         if (formatted != currentValue) {
-                                                            updateBalanceItem(item.id, item.copy(amount = formatted))
+                                                            viewModel.updateBalanceItem(item.id, item.copy(amount = formatted))
                                                         }
                                                     }
                                                 } else if (!wasFocused && focusState.isFocused) {
                                                     val currentValue = item.amount
                                                     if (currentValue.isNotBlank() && currentValue.contains(",")) {
                                                         val clean = removeCommas(currentValue)
-                                                        updateBalanceItem(item.id, item.copy(amount = clean))
+                                                        viewModel.updateBalanceItem(item.id, item.copy(amount = clean))
                                                     }
                                                 }
                                             },
@@ -470,7 +415,7 @@ fun BalancesPage(
                                     OutlinedTextField(
                                         value = item.rate,
                                         onValueChange = { newValue ->
-                                            updateBalanceItem(item.id, item.copy(rate = newValue))
+                                            viewModel.updateBalanceItem(item.id, item.copy(rate = newValue))
                                         },
                                         placeholder = {
                                             Text(
@@ -504,8 +449,8 @@ fun BalancesPage(
                                     Spacer(modifier = Modifier.width(20.dp))
                                 } else {
                                     IconButton(
-                                        onClick = { removeBalanceItem(item.id) },
-                                        enabled = balanceItems.size > 4, // Keep at least 4 items (net position + 2 fixed + 1 TZS)
+                                        onClick = { viewModel.removeBalanceItem(item.id) },
+                                        enabled = balanceItems.size > 4,
                                         modifier = Modifier.size(19.dp)
                                     ) {
                                         Icon(
@@ -551,6 +496,17 @@ fun BalancesPage(
                                 )
                             }
                         }
+
+                        // Add info about automatic saving
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "💾 All changes are automatically saved",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }

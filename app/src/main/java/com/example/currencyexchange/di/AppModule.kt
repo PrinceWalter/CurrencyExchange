@@ -54,4 +54,10 @@ object DatabaseModule {
     ): MigrationHelper {
         return MigrationHelper(transactionRepository, partnerRepository)
     }
+
+    @Provides
+    @Singleton
+    fun provideBalancesRepository(@ApplicationContext context: Context): BalancesRepository {
+        return BalancesRepository(context)
+    }
 }

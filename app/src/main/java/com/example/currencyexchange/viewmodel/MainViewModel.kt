@@ -610,4 +610,13 @@ class MainViewModel @Inject constructor(
     fun generateBackupFileName(): String {
         return backupRepository.generateBackupFileName()
     }
+
+    suspend fun updateDefaultExchangeRate(currency: String, rate: Double) {
+        try {
+            exchangeRateRepository.setDefaultRate(currency, rate)
+        } catch (e: Exception) {
+            // Handle error
+            e.printStackTrace()
+        }
+    }
 }
