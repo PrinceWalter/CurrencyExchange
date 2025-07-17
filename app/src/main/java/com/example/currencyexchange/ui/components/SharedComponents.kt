@@ -23,7 +23,7 @@ fun NetPositionItem(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = formatNumber(amount),
+            text = formatNumberWithCommas(amount),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = if (amount >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -31,6 +31,23 @@ fun NetPositionItem(
     }
 }
 
-private fun formatNumber(number: Double): String {
-    return String.format("%.2f", number)
+private fun formatNumberWithCommas(number: Double): String {
+    val formatted = String.format("%.2f", number)
+    val parts = formatted.split(".")
+    val integerPart = parts[0]
+    val decimalPart = if (parts.size > 1) parts[1] else "00"
+
+    // Handle negative sign
+    val isNegative = integerPart.startsWith("-")
+    val absoluteIntegerPart = if (isNegative) integerPart.substring(1) else integerPart
+
+    // Add commas to integer part
+    val formattedInteger = if (absoluteIntegerPart.length > 3) {
+        absoluteIntegerPart.reversed().chunked(3).joinToString(",").reversed()
+    } else {
+        absoluteIntegerPart
+    }
+
+    val sign = if (isNegative) "-" else ""
+    return "$sign$formattedInteger.$decimalPart"
 }

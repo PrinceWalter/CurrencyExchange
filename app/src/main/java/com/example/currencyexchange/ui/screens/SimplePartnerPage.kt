@@ -61,8 +61,23 @@ fun SimplePartnerPage(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val successMessage by viewModel.successMessage.collectAsState()
 
-    // Table state (without notes)
-    var transactionRows by remember { mutableStateOf(listOf(TransactionRow())) }
+    // Function to determine default currency based on partner name
+    fun getDefaultCurrencyForPartner(partnerName: String?): String {
+        if (partnerName == null) return "CNY"
+
+        val lowerCaseName = partnerName.lowercase()
+        return when {
+            lowerCaseName.contains("rmb") -> "CNY"
+            lowerCaseName.contains("usdt") -> "USDT"
+            else -> "CNY" // Default fallback
+        }
+    }
+
+    // Get default currency for this partner
+    val defaultCurrency = getDefaultCurrencyForPartner(partner?.name)
+
+    // Table state (without notes) - Initialize with partner-specific currency
+    var transactionRows by remember { mutableStateOf(listOf(TransactionRow(currency = defaultCurrency))) }
     var selectedDate by remember { mutableStateOf(Date()) }
     var showTransactionsList by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -79,6 +94,14 @@ fun SimplePartnerPage(
 
     // Summary data
     var partnerSummary by remember { mutableStateOf<PartnerSummary?>(null) }
+
+    // Update transaction rows when partner changes
+    LaunchedEffect(partner?.name) {
+        if (transactionRows.size == 1 && transactionRows[0].tzs.isEmpty() && transactionRows[0].foreignAmount.isEmpty()) {
+            // Only update if we have a single empty row
+            transactionRows = listOf(TransactionRow(currency = defaultCurrency))
+        }
+    }
 
     // Load summary when transactions change
     LaunchedEffect(transactions) {
@@ -118,9 +141,9 @@ fun SimplePartnerPage(
         }
     }
 
-    // Helper function to add a new row
+    // Helper function to add a new row with partner-specific default currency
     fun addNewRow() {
-        transactionRows = transactionRows + TransactionRow()
+        transactionRows = transactionRows + TransactionRow(currency = defaultCurrency)
     }
 
     // Helper function to remove a row
@@ -203,8 +226,8 @@ fun SimplePartnerPage(
             )
         }
 
-        // Clear the table after saving
-        transactionRows = listOf(TransactionRow())
+        // Clear the table after saving - with partner-specific default currency
+        transactionRows = listOf(TransactionRow(currency = defaultCurrency))
     }
 
     // Date Picker Dialog
@@ -222,8 +245,8 @@ fun SimplePartnerPage(
         // Initialize edit fields with formatted values when dialog opens
         LaunchedEffect(editingTransaction) {
             editingTransaction?.let { transaction ->
-                editTzsReceived = formatWithCommas(transaction.tzsReceived.toString())
-                editForeignAmount = formatWithCommas(transaction.foreignGiven.toString())
+                editTzsReceived = formatNumber(transaction.tzsReceived)
+                editForeignAmount = formatNumber(transaction.foreignGiven)
                 editForeignCurrency = transaction.foreignCurrency
                 editExchangeRate = transaction.exchangeRate.toString()
             }
@@ -338,27 +361,40 @@ fun SimplePartnerPage(
                         )
                     }
 
-                    // Currency selection
-                    Row(
-                        modifier = Modifier.selectableGroup(),
-                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                    // Currency display (read-only)
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        listOf("CNY", "USDT").forEach { currency ->
-                            Row(
-                                modifier = Modifier.selectable(
-                                    selected = editForeignCurrency == currency,
-                                    onClick = { editForeignCurrency = currency },
-                                    role = Role.RadioButton
-                                ),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = editForeignCurrency == currency,
-                                    onClick = null
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Text(currency, fontSize = 9.sp)
-                            }
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Currency: ",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 10.sp
+                            )
+                            Text(
+                                text = editForeignCurrency,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = when (editForeignCurrency) {
+                                    "CNY" -> MaterialTheme.colorScheme.secondary
+                                    "USDT" -> MaterialTheme.colorScheme.tertiary
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "(Currency cannot be changed when editing)",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 8.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
 
@@ -427,7 +463,7 @@ fun SimplePartnerPage(
                                 val updatedTransaction = oldTransaction.copy(
                                     tzsReceived = newTzsReceived,
                                     foreignGiven = newForeignAmount,
-                                    foreignCurrency = editForeignCurrency,
+                                    // foreignCurrency = editForeignCurrency, // Removed - currency cannot be changed
                                     exchangeRate = newExchangeRate,
                                     notes = "", // No notes
                                     lastModified = Date()
@@ -814,7 +850,7 @@ fun SimplePartnerPage(
                     }
                 }
 
-                // Optimized Transaction Table Section with negative toggle
+                // Optimized Transaction Table Section with auto-currency
                 Card {
                     Column(
                         modifier = Modifier.padding(12.dp)
@@ -824,12 +860,20 @@ fun SimplePartnerPage(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Add New Transactions",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
+                            Column {
+                                Text(
+                                    text = "Add New Transactions",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 11.sp
+                                )
+                            }
 
                             OutlinedButton(
                                 onClick = { addNewRow() }
@@ -842,7 +886,7 @@ fun SimplePartnerPage(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Table Header with negative toggle indicator
+                        // Table Header without currency column (since it's auto-set)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -853,19 +897,24 @@ fun SimplePartnerPage(
                         ) {
                             Text(
                                 text = "TZS",
-                                modifier = Modifier.weight(3.5f),
+                                modifier = Modifier.weight(3f),
                                 textAlign = TextAlign.Center,
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontSize = 11.sp
                             )
                             Text(
-                                text = "CNY/USDT",
+                                text = defaultCurrency,
                                 modifier = Modifier.weight(2.5f),
                                 textAlign = TextAlign.Center,
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontSize = 11.sp
+                                fontSize = 11.sp,
+                                color = when (defaultCurrency) {
+                                    "CNY" -> MaterialTheme.colorScheme.secondary
+                                    "USDT" -> MaterialTheme.colorScheme.tertiary
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                }
                             )
                             Text(
                                 text = "RATE",
@@ -893,7 +942,7 @@ fun SimplePartnerPage(
                             }
                         }
 
-                        // Transaction Rows with negative toggle
+                        // Transaction Rows without currency dropdown
                         transactionRows.forEachIndexed { index, row ->
                             // Track which field is focused in this row
                             var focusedField by remember(row.id) { mutableStateOf<String?>(null) }
@@ -923,7 +972,7 @@ fun SimplePartnerPage(
                                         imeAction = ImeAction.Next
                                     ),
                                     modifier = Modifier
-                                        .weight(3.5f)
+                                        .weight(3f)
                                         .onFocusChanged { focusState ->
                                             val wasFocused = isFocused
                                             isFocused = focusState.isFocused
@@ -950,84 +999,49 @@ fun SimplePartnerPage(
                                     textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
                                 )
 
-                                // CNY/USDT Column
-                                Column(modifier = Modifier.weight(2.5f)) {
-                                    var expanded by remember(row.id) { mutableStateOf(false) }
-                                    ExposedDropdownMenuBox(
-                                        expanded = expanded,
-                                        onExpandedChange = { expanded = !expanded },
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        OutlinedTextField(
-                                            value = row.currency,
-                                            onValueChange = { },
-                                            readOnly = true,
-                                            trailingIcon = {
-                                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-                                            },
-                                            modifier = Modifier.menuAnchor().fillMaxWidth(),
-                                            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
-                                        )
-                                        ExposedDropdownMenu(
-                                            expanded = expanded,
-                                            onDismissRequest = { expanded = false }
-                                        ) {
-                                            listOf("CNY", "USDT").forEach { currency ->
-                                                DropdownMenuItem(
-                                                    text = { Text(currency, fontSize = 12.sp) },
-                                                    onClick = {
-                                                        updateRow(row.id, row.copy(currency = currency))
-                                                        expanded = false
-                                                    }
-                                                )
-                                            }
+                                // Foreign Amount Column (no dropdown, just amount)
+                                var isFocusedAmount by remember(row.id) { mutableStateOf(false) }
+
+                                OutlinedTextField(
+                                    value = row.foreignAmount,
+                                    onValueChange = { newValue ->
+                                        if (isValidNumericInput(newValue)) {
+                                            updateRow(row.id, row.copy(foreignAmount = newValue))
                                         }
-                                    }
+                                    },
+                                    placeholder = { Text("0", fontSize = 12.sp) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Decimal,
+                                        imeAction = ImeAction.Next
+                                    ),
+                                    modifier = Modifier
+                                        .weight(2.5f)
+                                        .onFocusChanged { focusState ->
+                                            val wasFocused = isFocusedAmount
+                                            isFocusedAmount = focusState.isFocused
 
-                                    // Amount field
-                                    var isFocusedAmount by remember(row.id) { mutableStateOf(false) }
+                                            // Update focused field tracker
+                                            focusedField = if (focusState.isFocused) "foreign" else null
 
-                                    OutlinedTextField(
-                                        value = row.foreignAmount,
-                                        onValueChange = { newValue ->
-                                            if (isValidNumericInput(newValue)) {
-                                                updateRow(row.id, row.copy(foreignAmount = newValue))
-                                            }
-                                        },
-                                        placeholder = { Text("0", fontSize = 12.sp) },
-                                        singleLine = true,
-                                        keyboardOptions = KeyboardOptions(
-                                            keyboardType = KeyboardType.Decimal,
-                                            imeAction = ImeAction.Next
-                                        ),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .onFocusChanged { focusState ->
-                                                val wasFocused = isFocusedAmount
-                                                isFocusedAmount = focusState.isFocused
-
-                                                // Update focused field tracker
-                                                focusedField = if (focusState.isFocused) "foreign" else null
-
-                                                if (wasFocused && !focusState.isFocused) {
-                                                    val currentValue = row.foreignAmount
-                                                    if (currentValue.isNotBlank() && currentValue != "-") {
-                                                        val formatted = formatWithCommas(currentValue)
-                                                        if (formatted != currentValue) {
-                                                            updateRow(row.id, row.copy(foreignAmount = formatted))
-                                                        }
-                                                    }
-                                                } else if (!wasFocused && focusState.isFocused) {
-                                                    val currentValue = row.foreignAmount
-                                                    if (currentValue.isNotBlank() && currentValue.contains(",")) {
-                                                        val clean = removeCommas(currentValue)
-                                                        updateRow(row.id, row.copy(foreignAmount = clean))
+                                            if (wasFocused && !focusState.isFocused) {
+                                                val currentValue = row.foreignAmount
+                                                if (currentValue.isNotBlank() && currentValue != "-") {
+                                                    val formatted = formatWithCommas(currentValue)
+                                                    if (formatted != currentValue) {
+                                                        updateRow(row.id, row.copy(foreignAmount = formatted))
                                                     }
                                                 }
-                                            },
-                                        textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
-                                    )
-                                }
+                                            } else if (!wasFocused && focusState.isFocused) {
+                                                val currentValue = row.foreignAmount
+                                                if (currentValue.isNotBlank() && currentValue.contains(",")) {
+                                                    val clean = removeCommas(currentValue)
+                                                    updateRow(row.id, row.copy(foreignAmount = clean))
+                                                }
+                                            }
+                                        },
+                                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+                                )
 
                                 // RATE Column
                                 OutlinedTextField(
@@ -1154,6 +1168,7 @@ fun SimplePartnerPage(
     }
 }
 
+// Keep the rest of the helper composables and functions unchanged...
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TransactionDateGroup(
@@ -1213,7 +1228,7 @@ private fun TransactionDateGroup(
             ) {
                 Text(
                     text = "TZS Received",
-                    modifier = Modifier.weight(3f),
+                    modifier = Modifier.weight(3.2f),
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
@@ -1277,7 +1292,7 @@ private fun TransactionDateGroup(
                                 imeAction = ImeAction.Next
                             ),
                             modifier = Modifier
-                                .weight(3f)
+                                .weight(3.2f)
                                 .widthIn(min = 80.dp)
                                 .onFocusChanged { focusState ->
                                     val wasFocused = isFocusedEditTzsList
@@ -1344,39 +1359,20 @@ private fun TransactionDateGroup(
                             textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
                         )
 
-                        // Currency Selector - Compact
-                        var expanded by remember(transaction.id) { mutableStateOf(false) }
-                        ExposedDropdownMenuBox(
-                            expanded = expanded,
-                            onExpandedChange = { expanded = !expanded },
-                            modifier = Modifier.weight(1.5f)
-                        ) {
-                            OutlinedTextField(
-                                value = editData.currency,
-                                onValueChange = { },
-                                readOnly = true,
-                                trailingIcon = {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-                                },
-                                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                                textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
-                                label = { Text("Cur", fontSize = 9.sp) }
-                            )
-                            ExposedDropdownMenu(
-                                expanded = expanded,
-                                onDismissRequest = { expanded = false }
-                            ) {
-                                listOf("CNY", "USDT").forEach { currency ->
-                                    DropdownMenuItem(
-                                        text = { Text(currency, fontSize = 11.sp) },
-                                        onClick = {
-                                            editingValues = editingValues + (transaction.id to editData.copy(currency = currency))
-                                            expanded = false
-                                        }
-                                    )
-                                }
+                        // Currency Display - Read-only
+                        Text(
+                            text = editData.currency,
+                            modifier = Modifier.weight(1.5f),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = when (editData.currency) {
+                                "CNY" -> MaterialTheme.colorScheme.secondary
+                                "USDT" -> MaterialTheme.colorScheme.tertiary
+                                else -> MaterialTheme.colorScheme.onSurface
                             }
-                        }
+                        )
 
                         // Editable Rate - Elastic sizing
                         OutlinedTextField(
@@ -1402,11 +1398,11 @@ private fun TransactionDateGroup(
                         ) {
                             IconButton(
                                 onClick = {
-                                    // Save changes
+                                    // Save changes (currency cannot be changed)
                                     val updatedTransaction = transaction.copy(
                                         tzsReceived = removeCommas(editData.tzs).toDoubleOrNull() ?: 0.0,
                                         foreignGiven = removeCommas(editData.foreignAmount).toDoubleOrNull() ?: 0.0,
-                                        foreignCurrency = editData.currency,
+                                        // foreignCurrency = editData.currency, // Removed - currency cannot be changed
                                         exchangeRate = editData.rate.toDoubleOrNull() ?: 0.0,
                                         notes = "", // No notes
                                         lastModified = Date()
@@ -1444,8 +1440,8 @@ private fun TransactionDateGroup(
                     } else {
                         // Display mode - Elastic layout without NET TZS
                         Text(
-                            text = formatWithCommas(transaction.tzsReceived.toLong().toString()),
-                            modifier = Modifier.weight(3f),
+                            text = formatNumber(transaction.tzsReceived),
+                            modifier = Modifier.weight(3.2f),
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium,
                             fontSize = 12.sp,
@@ -1453,7 +1449,7 @@ private fun TransactionDateGroup(
                         )
 
                         Text(
-                            text = formatWithCommas(transaction.foreignGiven.toLong().toString()),
+                            text = formatNumber(transaction.foreignGiven),
                             modifier = Modifier.weight(3f),
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium,
@@ -1492,8 +1488,8 @@ private fun TransactionDateGroup(
                                     // Start editing with comma-formatted values
                                     editingTransactionId = transaction.id
                                     editingValues = editingValues + (transaction.id to EditableTransactionData(
-                                        tzs = formatWithCommas(transaction.tzsReceived.toLong().toString()),
-                                        foreignAmount = formatWithCommas(transaction.foreignGiven.toLong().toString()),
+                                        tzs = formatNumber(transaction.tzsReceived),
+                                        foreignAmount = formatNumber(transaction.foreignGiven),
                                         currency = transaction.foreignCurrency,
                                         rate = transaction.exchangeRate.toString(),
                                         notes = "" // No notes
@@ -1726,7 +1722,24 @@ private fun DatePickerDialog(
 
 // Helper functions
 private fun formatNumber(number: Double): String {
-    return String.format("%.2f", number)
+    val formatted = String.format("%.2f", number)
+    val parts = formatted.split(".")
+    val integerPart = parts[0]
+    val decimalPart = if (parts.size > 1) parts[1] else "00"
+
+    // Handle negative sign
+    val isNegative = integerPart.startsWith("-")
+    val absoluteIntegerPart = if (isNegative) integerPart.substring(1) else integerPart
+
+    // Add commas to integer part
+    val formattedInteger = if (absoluteIntegerPart.length > 3) {
+        absoluteIntegerPart.reversed().chunked(3).joinToString(",").reversed()
+    } else {
+        absoluteIntegerPart
+    }
+
+    val sign = if (isNegative) "-" else ""
+    return "$sign$formattedInteger.$decimalPart"
 }
 
 private fun getMonthName(month: Int): String {

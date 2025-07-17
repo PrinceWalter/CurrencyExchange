@@ -2,6 +2,7 @@ package com.example.currencyexchange.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -19,6 +20,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -42,6 +44,10 @@ fun BalancesPage(
     val netPositionTzs by viewModel.netPositionTzs.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
+
+    // State for delete confirmation dialog
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var itemToDelete by remember { mutableStateOf<BalanceItem?>(null) }
 
     // Helper functions
     fun formatNumberWithCommas(number: Double): String {
@@ -107,6 +113,115 @@ fun BalancesPage(
                 else -> 0.0
             }
         }
+    }
+
+    // Delete Confirmation Dialog
+    if (showDeleteDialog && itemToDelete != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteDialog = false
+                itemToDelete = null
+            },
+            title = {
+                Text(
+                    "Delete Balance Item",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        "Are you sure you want to delete this balance item?",
+                        fontSize = 14.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Show item details
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp)
+                        ) {
+                            Text(
+                                text = "Item Details:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = "Description: ${itemToDelete?.description?.ifBlank { "(Empty)" }}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = "Amount: ${itemToDelete?.amount?.ifBlank { "(Empty)" }} ${itemToDelete?.currency}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp
+                            )
+                            if (itemToDelete?.rate?.isNotBlank() == true) {
+                                Text(
+                                    text = "Rate: ${itemToDelete?.rate}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "This action cannot be undone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        itemToDelete?.let { item ->
+                            viewModel.removeBalanceItem(item.id)
+                        }
+                        showDeleteDialog = false
+                        itemToDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        itemToDelete = null
+                    }
+                ) {
+                    Text("Cancel", fontSize = 14.sp)
+                }
+            },
+            icon = {
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        )
     }
 
     val totalTzs = calculateTotalTzs()
@@ -314,152 +429,198 @@ fun BalancesPage(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .border(1.dp, MaterialTheme.colorScheme.outline)
-                                    .padding(3.dp),
+                                    .padding(3.dp)
+                                    .wrapContentHeight(), // Allow row to expand vertically
                                 horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.Top // Align items to top instead of center
                             ) {
-                                // Description
-                                if (item.isNetPosition || item.isFixedType) {
-                                    Text(
-                                        text = item.description,
-                                        modifier = Modifier.weight(2.7f),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 9.sp,
-                                        color = when {
-                                            item.isNetPosition -> MaterialTheme.colorScheme.primary
-                                            item.currency == "CNY" -> MaterialTheme.colorScheme.secondary
-                                            item.currency == "USDT" -> MaterialTheme.colorScheme.tertiary
-                                            else -> MaterialTheme.colorScheme.onSurface
-                                        }
-                                    )
-                                } else {
-                                    OutlinedTextField(
-                                        value = item.description,
-                                        onValueChange = { newValue ->
-                                            viewModel.updateBalanceItem(item.id, item.copy(description = newValue))
-                                        },
-                                        placeholder = { Text("", fontSize = 9.sp) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(2.7f),
-                                        textStyle = LocalTextStyle.current.copy(fontSize = 9.sp)
-                                    )
+                                // Description - Multi-line with auto-expand
+                                Box(
+                                    modifier = Modifier.weight(2.7f)
+                                ) {
+                                    if (item.isNetPosition || item.isFixedType) {
+                                        // Read-only items with multi-line text
+                                        Text(
+                                            text = item.description,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 9.sp
+                                            ),
+                                            color = when {
+                                                item.isNetPosition -> MaterialTheme.colorScheme.primary
+                                                item.currency == "CNY" -> MaterialTheme.colorScheme.secondary
+                                                item.currency == "USDT" -> MaterialTheme.colorScheme.tertiary
+                                                else -> MaterialTheme.colorScheme.onSurface
+                                            },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(8.dp),
+                                            maxLines = Int.MAX_VALUE, // Allow unlimited lines
+                                            overflow = TextOverflow.Visible
+                                        )
+                                    } else {
+                                        // Editable items - multi-line TextField
+                                        OutlinedTextField(
+                                            value = item.description,
+                                            onValueChange = { newValue ->
+                                                viewModel.updateBalanceItem(item.id, item.copy(description = newValue))
+                                            },
+                                            placeholder = { Text("", fontSize = 9.sp) },
+                                            singleLine = false, // Allow multiple lines
+                                            maxLines = Int.MAX_VALUE, // Allow unlimited lines
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .wrapContentHeight(), // Allow height to grow
+                                            textStyle = LocalTextStyle.current.copy(fontSize = 9.sp)
+                                        )
+                                    }
                                 }
 
-                                // Amount (optimized for 9 digits on Galaxy S8)
-                                if (item.isNetPosition) {
-                                    Text(
-                                        text = item.amount,
-                                        modifier = Modifier
-                                            .weight(3.7f)
-                                            .widthIn(min = 100.dp, max = 120.dp),
-                                        textAlign = TextAlign.End,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 9.sp,
-                                        color = if (netPositionTzs >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                    )
-                                } else {
-                                    var isFocusedAmount by remember(item.id) { mutableStateOf(false) }
+                                // Amount (with proper vertical alignment)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(3.7f)
+                                        .widthIn(min = 100.dp, max = 120.dp)
+                                        .wrapContentHeight(),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    if (item.isNetPosition) {
+                                        Text(
+                                            text = item.amount,
+                                            textAlign = TextAlign.End,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 9.sp,
+                                            color = if (netPositionTzs >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(4.dp)
+                                        )
+                                    } else {
+                                        var isFocusedAmount by remember(item.id) { mutableStateOf(false) }
 
-                                    OutlinedTextField(
-                                        value = item.amount,
-                                        onValueChange = { newValue ->
-                                            val cleanValue = newValue.replace(",", "")
-                                            if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' || it == '-' }) {
-                                                viewModel.updateBalanceItem(item.id, item.copy(amount = newValue))
-                                            }
-                                        },
-                                        placeholder = { Text("0.00", fontSize = 9.sp) },
-                                        singleLine = true,
-                                        modifier = Modifier
-                                            .weight(3.7f)
-                                            .widthIn(min = 100.dp, max = 120.dp)
-                                            .onFocusChanged { focusState ->
-                                                val wasFocused = isFocusedAmount
-                                                isFocusedAmount = focusState.isFocused
-
-                                                if (wasFocused && !focusState.isFocused) {
-                                                    val currentValue = item.amount
-                                                    if (currentValue.isNotBlank()) {
-                                                        val formatted = formatWithCommas(currentValue)
-                                                        if (formatted != currentValue) {
-                                                            viewModel.updateBalanceItem(item.id, item.copy(amount = formatted))
-                                                        }
-                                                    }
-                                                } else if (!wasFocused && focusState.isFocused) {
-                                                    val currentValue = item.amount
-                                                    if (currentValue.isNotBlank() && currentValue.contains(",")) {
-                                                        val clean = removeCommas(currentValue)
-                                                        viewModel.updateBalanceItem(item.id, item.copy(amount = clean))
-                                                    }
+                                        OutlinedTextField(
+                                            value = item.amount,
+                                            onValueChange = { newValue ->
+                                                val cleanValue = newValue.replace(",", "")
+                                                if (cleanValue.isEmpty() || cleanValue.all { it.isDigit() || it == '.' || it == '-' }) {
+                                                    viewModel.updateBalanceItem(item.id, item.copy(amount = newValue))
                                                 }
                                             },
-                                        textStyle = LocalTextStyle.current.copy(fontSize = 9.sp)
-                                    )
+                                            placeholder = { Text("0.00", fontSize = 9.sp) },
+                                            singleLine = true, // Keep amount as single line
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .onFocusChanged { focusState ->
+                                                    val wasFocused = isFocusedAmount
+                                                    isFocusedAmount = focusState.isFocused
+
+                                                    if (wasFocused && !focusState.isFocused) {
+                                                        val currentValue = item.amount
+                                                        if (currentValue.isNotBlank()) {
+                                                            val formatted = formatWithCommas(currentValue)
+                                                            if (formatted != currentValue) {
+                                                                viewModel.updateBalanceItem(item.id, item.copy(amount = formatted))
+                                                            }
+                                                        }
+                                                    } else if (!wasFocused && focusState.isFocused) {
+                                                        val currentValue = item.amount
+                                                        if (currentValue.isNotBlank() && currentValue.contains(",")) {
+                                                            val clean = removeCommas(currentValue)
+                                                            viewModel.updateBalanceItem(item.id, item.copy(amount = clean))
+                                                        }
+                                                    }
+                                                },
+                                            textStyle = LocalTextStyle.current.copy(fontSize = 9.sp)
+                                        )
+                                    }
                                 }
 
-                                // Rate (optimized for 4 digits on Galaxy S8)
-                                if (item.isNetPosition || item.currency == "TZS") {
-                                    Text(
-                                        text = "-",
-                                        modifier = Modifier
-                                            .weight(2.3f)
-                                            .widthIn(min = 50.dp, max = 70.dp),
-                                        textAlign = TextAlign.Center,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontSize = 9.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                } else {
-                                    OutlinedTextField(
-                                        value = item.rate,
-                                        onValueChange = { newValue ->
-                                            viewModel.updateBalanceItem(item.id, item.copy(rate = newValue))
-                                        },
-                                        placeholder = {
-                                            Text(
-                                                if (item.currency == "CNY") defaultCnyRate else defaultUsdtRate,
-                                                fontSize = 9.sp
-                                            )
-                                        },
-                                        singleLine = true,
-                                        modifier = Modifier
-                                            .weight(2.5f)
-                                            .widthIn(min = 50.dp, max = 70.dp),
-                                        textStyle = LocalTextStyle.current.copy(fontSize = 10.sp)
-                                    )
-                                }
-
-                                // TZS Equivalent (optimized for Galaxy S8)
-                                Text(
-                                    text = formatNumberWithCommas(tzsEquivalent),
+                                // Rate (with proper vertical alignment)
+                                Box(
                                     modifier = Modifier
                                         .weight(2.3f)
-                                        .widthIn(min = 90.dp, max = 120.dp),
-                                    textAlign = TextAlign.End,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 9.sp,
-                                    color = if (tzsEquivalent >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                )
-
-                                // Delete button (sized for Galaxy S8)
-                                if (item.isNetPosition || item.isFixedType) {
-                                    Spacer(modifier = Modifier.width(20.dp))
-                                } else {
-                                    IconButton(
-                                        onClick = { viewModel.removeBalanceItem(item.id) },
-                                        enabled = balanceItems.size > 4,
-                                        modifier = Modifier.size(19.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Delete,
-                                            contentDescription = "Delete",
-                                            tint = if (balanceItems.size > 4) MaterialTheme.colorScheme.error
-                                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(14.dp)
+                                        .widthIn(min = 50.dp, max = 70.dp)
+                                        .wrapContentHeight(),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    if (item.isNetPosition || item.currency == "TZS") {
+                                        Text(
+                                            text = "-",
+                                            textAlign = TextAlign.Center,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontSize = 9.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(4.dp)
                                         )
+                                    } else {
+                                        OutlinedTextField(
+                                            value = item.rate,
+                                            onValueChange = { newValue ->
+                                                viewModel.updateBalanceItem(item.id, item.copy(rate = newValue))
+                                            },
+                                            placeholder = {
+                                                Text(
+                                                    if (item.currency == "CNY") defaultCnyRate else defaultUsdtRate,
+                                                    fontSize = 9.sp
+                                                )
+                                            },
+                                            singleLine = true, // Keep rate as single line
+                                            modifier = Modifier.fillMaxWidth(),
+                                            textStyle = LocalTextStyle.current.copy(fontSize = 10.sp)
+                                        )
+                                    }
+                                }
+
+                                // TZS Equivalent (with proper vertical alignment)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(2.3f)
+                                        .widthIn(min = 90.dp, max = 120.dp)
+                                        .wrapContentHeight(),
+                                    contentAlignment = Alignment.CenterEnd
+                                ) {
+                                    Text(
+                                        text = formatNumberWithCommas(tzsEquivalent),
+                                        textAlign = TextAlign.End,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 9.sp,
+                                        color = if (tzsEquivalent >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(4.dp)
+                                    )
+                                }
+
+                                // Delete button (properly aligned for expandable rows)
+                                Box(
+                                    modifier = Modifier
+                                        .width(20.dp)
+                                        .wrapContentHeight(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (item.isNetPosition || item.isFixedType) {
+                                        Spacer(modifier = Modifier.width(20.dp))
+                                    } else {
+                                        IconButton(
+                                            onClick = {
+                                                itemToDelete = item
+                                                showDeleteDialog = true
+                                            },
+                                            enabled = balanceItems.size > 4,
+                                            modifier = Modifier.size(19.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Delete,
+                                                contentDescription = "Delete",
+                                                tint = if (balanceItems.size > 4) MaterialTheme.colorScheme.error
+                                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
