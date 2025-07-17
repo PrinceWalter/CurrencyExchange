@@ -44,6 +44,13 @@ data class TransactionRow(
     var rate: String = ""
 )
 
+// Data class for cumulative positions
+data class CumulativePositions(
+    val cumulativeTzs: Double,
+    val cumulativeCny: Double,
+    val cumulativeUsdt: Double
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SimplePartnerPage(
@@ -618,7 +625,7 @@ fun SimplePartnerPage(
     }
 
     if (showTransactionsList) {
-        // Show all transactions view
+        // Show all transactions view - MODIFIED FOR CUMULATIVE CALCULATIONS
         Column(
             modifier = modifier.fillMaxSize()
         ) {
@@ -670,7 +677,7 @@ fun SimplePartnerPage(
                     }
                 }
 
-                // Transactions by Date
+                // Transactions by Date - MODIFIED FOR CUMULATIVE CALCULATIONS
                 if (transactions.isEmpty()) {
                     Card {
                         Column(
@@ -708,6 +715,37 @@ fun SimplePartnerPage(
                         SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).parse(it)
                     })
 
+                    // Calculate cumulative positions
+                    val cumulativePositions = mutableMapOf<String, CumulativePositions>()
+
+                    // Sort dates in ascending order for cumulative calculation
+                    val sortedDates = groupedTransactions.keys.sortedBy {
+                        SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).parse(it)
+                    }
+
+                    var cumulativeTzs = 0.0
+                    var cumulativeCny = 0.0
+                    var cumulativeUsdt = 0.0
+
+                    sortedDates.forEach { dateString ->
+                        val dayTransactions = groupedTransactions[dateString] ?: emptyList()
+
+                        // Add this day's net positions to the cumulative totals
+                        val dayTzs = dayTransactions.sumOf { it.netTzs }
+                        val dayCny = dayTransactions.filter { it.foreignCurrency == "CNY" }.sumOf { it.netForeign }
+                        val dayUsdt = dayTransactions.filter { it.foreignCurrency == "USDT" }.sumOf { it.netForeign }
+
+                        cumulativeTzs += dayTzs
+                        cumulativeCny += dayCny
+                        cumulativeUsdt += dayUsdt
+
+                        cumulativePositions[dateString] = CumulativePositions(
+                            cumulativeTzs = cumulativeTzs,
+                            cumulativeCny = cumulativeCny,
+                            cumulativeUsdt = cumulativeUsdt
+                        )
+                    }
+
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -716,6 +754,7 @@ fun SimplePartnerPage(
                                 TransactionDateGroup(
                                     dateString = dateString,
                                     transactions = dayTransactions,
+                                    cumulativePositions = cumulativePositions[dateString],
                                     onUpdateTransaction = { transaction ->
                                         viewModel.updateTransaction(transaction)
                                     },
@@ -1168,12 +1207,13 @@ fun SimplePartnerPage(
     }
 }
 
-// Keep the rest of the helper composables and functions unchanged...
+// MODIFIED TransactionDateGroup to include cumulative positions with smaller fonts
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TransactionDateGroup(
     dateString: String,
     transactions: List<TransactionEntity>,
+    cumulativePositions: CumulativePositions?,
     onUpdateTransaction: (TransactionEntity) -> Unit,
     onDeleteTransaction: (TransactionEntity) -> Unit,
     formatWithCommas: (String) -> String,
@@ -1192,7 +1232,7 @@ private fun TransactionDateGroup(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(12.dp)
+            modifier = Modifier.padding(10.dp) // Reduced padding
         ) {
             // Date Header
             Row(
@@ -1205,17 +1245,17 @@ private fun TransactionDateGroup(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
-                    fontSize = 14.sp
+                    fontSize = 13.sp // Reduced font size
                 )
                 Text(
                     text = "${transactions.size} transactions",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp
+                    fontSize = 11.sp // Reduced font size
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Elastic Table Header (removed NET TZS column)
             Row(
@@ -1223,8 +1263,8 @@ private fun TransactionDateGroup(
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.primaryContainer)
                     .border(1.dp, MaterialTheme.colorScheme.outline)
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(6.dp), // Reduced padding
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
                     text = "TZS Received",
@@ -1232,7 +1272,7 @@ private fun TransactionDateGroup(
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
-                    fontSize = 11.sp
+                    fontSize = 10.sp // Reduced font size
                 )
                 Text(
                     text = "Foreign Amount",
@@ -1240,7 +1280,7 @@ private fun TransactionDateGroup(
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
-                    fontSize = 11.sp
+                    fontSize = 10.sp // Reduced font size
                 )
                 Text(
                     text = "Currency",
@@ -1248,7 +1288,7 @@ private fun TransactionDateGroup(
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
-                    fontSize = 11.sp
+                    fontSize = 10.sp // Reduced font size
                 )
                 Text(
                     text = "Rate",
@@ -1256,9 +1296,9 @@ private fun TransactionDateGroup(
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodySmall,
-                    fontSize = 11.sp
+                    fontSize = 10.sp // Reduced font size
                 )
-                Spacer(modifier = Modifier.width(80.dp)) // Space for action buttons
+                Spacer(modifier = Modifier.width(70.dp)) // Space for action buttons
             }
 
             // Transaction Rows - Elastic layout without NET TZS column, with negative support
@@ -1270,8 +1310,8 @@ private fun TransactionDateGroup(
                     modifier = Modifier
                         .fillMaxWidth()
                         .border(1.dp, MaterialTheme.colorScheme.outline)
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(6.dp), // Reduced padding
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (isEditing && editData != null) {
@@ -1285,7 +1325,7 @@ private fun TransactionDateGroup(
                                     editingValues = editingValues + (transaction.id to editData.copy(tzs = newValue))
                                 }
                             },
-                            label = { Text("TZS", fontSize = 10.sp) },
+                            label = { Text("TZS", fontSize = 9.sp) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Decimal,
@@ -1293,7 +1333,7 @@ private fun TransactionDateGroup(
                             ),
                             modifier = Modifier
                                 .weight(3.2f)
-                                .widthIn(min = 80.dp)
+                                .widthIn(min = 70.dp)
                                 .onFocusChanged { focusState ->
                                     val wasFocused = isFocusedEditTzsList
                                     isFocusedEditTzsList = focusState.isFocused
@@ -1314,7 +1354,7 @@ private fun TransactionDateGroup(
                                         }
                                     }
                                 },
-                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                            textStyle = LocalTextStyle.current.copy(fontSize = 11.sp) // Reduced font size
                         )
 
                         // Editable Foreign Amount field - Elastic sizing with negative support
@@ -1327,7 +1367,7 @@ private fun TransactionDateGroup(
                                     editingValues = editingValues + (transaction.id to editData.copy(foreignAmount = newValue))
                                 }
                             },
-                            label = { Text("${editData.currency}", fontSize = 10.sp) },
+                            label = { Text("${editData.currency}", fontSize = 9.sp) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Decimal,
@@ -1335,7 +1375,7 @@ private fun TransactionDateGroup(
                             ),
                             modifier = Modifier
                                 .weight(3f)
-                                .widthIn(min = 80.dp)
+                                .widthIn(min = 70.dp)
                                 .onFocusChanged { focusState ->
                                     val wasFocused = isFocusedEditForeignList
                                     isFocusedEditForeignList = focusState.isFocused
@@ -1356,7 +1396,7 @@ private fun TransactionDateGroup(
                                         }
                                     }
                                 },
-                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                            textStyle = LocalTextStyle.current.copy(fontSize = 11.sp) // Reduced font size
                         )
 
                         // Currency Display - Read-only
@@ -1366,7 +1406,7 @@ private fun TransactionDateGroup(
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
+                            fontSize = 11.sp, // Reduced font size
                             color = when (editData.currency) {
                                 "CNY" -> MaterialTheme.colorScheme.secondary
                                 "USDT" -> MaterialTheme.colorScheme.tertiary
@@ -1380,7 +1420,7 @@ private fun TransactionDateGroup(
                             onValueChange = { newValue ->
                                 editingValues = editingValues + (transaction.id to editData.copy(rate = newValue))
                             },
-                            label = { Text("Rate", fontSize = 10.sp) },
+                            label = { Text("Rate", fontSize = 9.sp) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Decimal,
@@ -1388,13 +1428,13 @@ private fun TransactionDateGroup(
                             ),
                             modifier = Modifier
                                 .weight(2f)
-                                .widthIn(min = 60.dp),
-                            textStyle = LocalTextStyle.current.copy(fontSize = 11.sp)
+                                .widthIn(min = 50.dp),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 10.sp) // Reduced font size
                         )
 
                         // Action Buttons (Save/Cancel)
                         Row(
-                            modifier = Modifier.width(80.dp)
+                            modifier = Modifier.width(70.dp)
                         ) {
                             IconButton(
                                 onClick = {
@@ -1411,13 +1451,13 @@ private fun TransactionDateGroup(
                                     editingTransactionId = null
                                     editingValues = editingValues - transaction.id
                                 },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp) // Reduced size
                             ) {
                                 Icon(
                                     Icons.Filled.Check,
                                     contentDescription = "Save",
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(14.dp) // Reduced size
                                 )
                             }
 
@@ -1427,13 +1467,13 @@ private fun TransactionDateGroup(
                                     editingTransactionId = null
                                     editingValues = editingValues - transaction.id
                                 },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp) // Reduced size
                             ) {
                                 Icon(
                                     Icons.Filled.Close,
                                     contentDescription = "Cancel",
                                     tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(14.dp) // Reduced size
                                 )
                             }
                         }
@@ -1444,7 +1484,7 @@ private fun TransactionDateGroup(
                             modifier = Modifier.weight(3.2f),
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium,
-                            fontSize = 12.sp,
+                            fontSize = 11.sp, // Reduced font size
                             fontWeight = FontWeight.Medium
                         )
 
@@ -1453,7 +1493,7 @@ private fun TransactionDateGroup(
                             modifier = Modifier.weight(3f),
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium,
-                            fontSize = 12.sp,
+                            fontSize = 11.sp, // Reduced font size
                             fontWeight = FontWeight.Medium
                         )
 
@@ -1463,7 +1503,7 @@ private fun TransactionDateGroup(
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
+                            fontSize = 11.sp, // Reduced font size
                             color = when (transaction.foreignCurrency) {
                                 "CNY" -> MaterialTheme.colorScheme.secondary
                                 "USDT" -> MaterialTheme.colorScheme.tertiary
@@ -1476,12 +1516,12 @@ private fun TransactionDateGroup(
                             modifier = Modifier.weight(2f),
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium,
-                            fontSize = 11.sp
+                            fontSize = 10.sp // Reduced font size
                         )
 
                         // Action Buttons (Edit/Delete)
                         Row(
-                            modifier = Modifier.width(80.dp)
+                            modifier = Modifier.width(70.dp)
                         ) {
                             IconButton(
                                 onClick = {
@@ -1495,25 +1535,25 @@ private fun TransactionDateGroup(
                                         notes = "" // No notes
                                     ))
                                 },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp) // Reduced size
                             ) {
                                 Icon(
                                     Icons.Filled.Edit,
                                     contentDescription = "Edit",
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(14.dp) // Reduced size
                                 )
                             }
 
                             IconButton(
                                 onClick = { onDeleteTransaction(transaction) },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp) // Reduced size
                             ) {
                                 Icon(
                                     Icons.Filled.Delete,
                                     contentDescription = "Delete",
                                     tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(14.dp) // Reduced size
                                 )
                             }
                         }
@@ -1521,8 +1561,8 @@ private fun TransactionDateGroup(
                 }
             }
 
-            // Date Net Positions
-            Spacer(modifier = Modifier.height(6.dp))
+            // Date Net Positions (SMALLER FONTS)
+            Spacer(modifier = Modifier.height(4.dp)) // Reduced spacing
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
@@ -1530,30 +1570,92 @@ private fun TransactionDateGroup(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(8.dp)
+                    modifier = Modifier.padding(6.dp) // Reduced padding
                 ) {
                     Text(
                         text = "Net Positions for $dateString",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
-                        fontSize = 12.sp
+                        fontSize = 10.sp // Reduced font size
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        NetPositionItem("TZS", dateTzs)
-                        NetPositionItem("CNY", dateCny)
-                        NetPositionItem("USDT", dateUsdt)
+                        SmallNetPositionItem("TZS", dateTzs)
+                        SmallNetPositionItem("CNY", dateCny)
+                        SmallNetPositionItem("USDT", dateUsdt)
+                    }
+                }
+            }
+
+            // CUMULATIVE POSITIONS (NEW SECTION)
+            cumulativePositions?.let { cumulative ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(6.dp) // Compact padding
+                    ) {
+                        Text(
+                            text = "📊 Cumulative Positions (through $dateString)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            fontSize = 10.sp // Small font size
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            SmallNetPositionItem("TZS", cumulative.cumulativeTzs)
+                            SmallNetPositionItem("CNY", cumulative.cumulativeCny)
+                            SmallNetPositionItem("USDT", cumulative.cumulativeUsdt)
+                        }
                     }
                 }
             }
         }
     }
 }
+
+// NEW COMPONENT: Smaller version of NetPositionItem for space efficiency
+@Composable
+private fun SmallNetPositionItem(
+    currency: String,
+    amount: Double,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+    ) {
+        Text(
+            text = currency,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 9.sp // Very small font
+        )
+        Text(
+            text = formatNumberWithCommas(amount),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            color = if (amount >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            fontSize = 10.sp // Small font
+        )
+    }
+}
+
+// Note: Using formatNumberWithCommas function from SimpleMainPage.kt
 
 // Data class for editable transaction data (without notes)
 data class EditableTransactionData(

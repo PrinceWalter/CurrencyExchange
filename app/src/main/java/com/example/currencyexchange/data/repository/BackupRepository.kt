@@ -164,7 +164,18 @@ class BackupRepository @Inject constructor(
                 }
             }
 
-            // 2. Restore Transactions (avoid duplicates)
+            // Get all existing transactions for all partners BEFORE starting restoration
+            val existingTransactionsByPartner = mutableMapOf<Long, Set<String>>()
+            partnerNameToIdMap.values.forEach { partnerId ->
+                val existingTransactions = transactionRepository.getTransactionsByPartner(partnerId).first()
+                val existingDates = existingTransactions.map { transaction ->
+                    val cal = java.util.Calendar.getInstance().apply { time = transaction.date }
+                    "${cal.get(java.util.Calendar.YEAR)}-${cal.get(java.util.Calendar.DAY_OF_YEAR)}"
+                }.toSet()
+                existingTransactionsByPartner[partnerId] = existingDates
+            }
+
+            // 2. Restore Transactions - Simple date-based duplicate detection
             for (backupTransaction in backupData.transactions) {
                 try {
                     val partnerId = partnerNameToIdMap[backupTransaction.partnerName]
@@ -173,17 +184,13 @@ class BackupRepository @Inject constructor(
                         continue
                     }
 
-                    // Check for duplicate transactions
-                    val existingTransactions = transactionRepository.getTransactionsByPartner(partnerId).first()
-                    val isDuplicate = existingTransactions.any { existing ->
-                        existing.date.time == backupTransaction.date &&
-                                existing.tzsReceived == backupTransaction.tzsReceived &&
-                                existing.foreignGiven == backupTransaction.foreignGiven &&
-                                existing.foreignCurrency == backupTransaction.foreignCurrency &&
-                                existing.exchangeRate == backupTransaction.exchangeRate
-                    }
+                    // Check if this date existed BEFORE the restore process started
+                    val backupDate = java.util.Calendar.getInstance().apply { timeInMillis = backupTransaction.date }
+                    val dateKey = "${backupDate.get(java.util.Calendar.YEAR)}-${backupDate.get(java.util.Calendar.DAY_OF_YEAR)}"
 
-                    if (!isDuplicate) {
+                    val dateAlreadyExisted = existingTransactionsByPartner[partnerId]?.contains(dateKey) == true
+
+                    if (!dateAlreadyExisted) {
                         transactionRepository.addTransaction(
                             partnerId = partnerId,
                             date = Date(backupTransaction.date),
