@@ -311,182 +311,245 @@ class MainViewModel @Inject constructor(
 
         val htmlContent = buildString {
             append("""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Currency Exchange Report - $partnerName</title>
-                    <style>
-                        body { 
-                            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                            margin: 30px; 
-                            background-color: #f8f9fa;
-                            color: #030303;
-                            font-weight: bold;
-                            line-height: 1.6;
-                        }
-                        .container {
-                            background-color: white;
-                            padding: 30px;
-                            border-radius: 8px;
-                            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                        }
-                        .header { 
-                            text-align: center; 
-                            margin-bottom: 40px; 
-                            border-bottom: 3px solid #007bff;
-                            padding-bottom: 20px;
-                        }
-                        .header h1 {
-                            color: #007bff;
-                            margin-bottom: 10px;
-                            font-size: 28px;
-                        }
-                        .header h2 {
-                            color: #495057;
-                            margin-bottom: 5px;
-                            font-size: 20px;
-                        }
-                        .info-section { 
-                            margin-bottom: 30px; 
-                        }
-                        .info-section h3 {
-                            color: #007bff;
-                            border-bottom: 2px solid #e9ecef;
-                            padding-bottom: 5px;
-                            margin-bottom: 15px;
-                        }
-                        .summary-table, .transaction-table { 
-                            width: 100%; 
-                            border-collapse: collapse; 
-                            margin-bottom: 20px;
-                            font-size: 14px;
-                        }
-                        th, td { 
-                            border: 1px solid #dee2e6; 
-                            padding: 12px 8px; 
-                            text-align: left; 
-                        }
-                        th { 
-                            background-color: #007bff; 
-                            color: white;
-                            font-weight: bold; 
-                            text-align: center;
-                        }
-                        .amount { color: #030303; font-weight: bold; text-align: right; font-family: 'Calibri', monospace; }
-                        .positive { color: #28a745; font-weight: bold; }
-                        .negative { color: #dc3545; font-weight: bold; }
-                        .total-row { 
-                            background-color: #e3f2fd; 
-                            font-weight: bold; 
-                        }
-                        .currency-cell {
-                            text-align: center;
-                            font-weight: bold;
-                            background-color: #f8f9fa;
-                        }
-                        .date-cell {
-                            font-family: 'Courier New', monospace;
-                            background-color: #f8f9fa;
-                        }
-                        .notes-cell {
-                            max-width: 200px;
-                            word-wrap: break-word;
-                        }
-                        @media print {
-                            body { margin: 0; background-color: white; }
-                            .container { box-shadow: none; }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="header">
-                            <h1>💰 Currency Exchange Report</h1>
-                            <h2>Client: $partnerName</h2>
-                            <p><strong>Date Range:</strong> ${dateFormat.format(startDate)} - ${dateFormat.format(endDate)}</p>
-                            <p><strong>Generated:</strong> ${dateTimeFormat.format(Date())}</p>
-                        </div>
-                        
-                        <div class="info-section">
-                            <h3>📊 Summary</h3>
-                            <table class="summary-table">
-                                <tr><th>Currency</th><th>Net Position</th><th>Status</th></tr>
-                                <tr class="${if (summary.totalNetTzs >= 0) "positive" else "negative"}">
-                                    <td class="currency-cell">TZS</td>
-                                    <td class="amount ${if (summary.totalNetTzs >= 0) "positive" else "negative"}">${formatNumber(summary.totalNetTzs)}</td>
-                                    <td style="text-align: center;">${if (summary.totalNetTzs >= 0) "✅ Credit" else "❌ Debit"}</td>
-                                </tr>
-                                <tr class="${if (summary.totalNetCny >= 0) "positive" else "negative"}">
-                                    <td class="currency-cell">CNY</td>
-                                    <td class="amount ${if (summary.totalNetCny >= 0) "positive" else "negative"}">${formatNumber(summary.totalNetCny)}</td>
-                                    <td style="text-align: center;">${if (summary.totalNetCny >= 0) "✅ Credit" else "❌ Debit"}</td>
-                                </tr>
-                                <tr class="${if (summary.totalNetUsdt >= 0) "positive" else "negative"}">
-                                    <td class="currency-cell">USD</td>
-                                    <td class="amount ${if (summary.totalNetUsdt >= 0) "positive" else "negative"}">${formatNumber(summary.totalNetUsdt)}</td>
-                                    <td style="text-align: center;">${if (summary.totalNetUsdt >= 0) "✅ Credit" else "❌ Debit"}</td>
-                                </tr>
-                                <tr class="total-row">
-                                    <td><strong>Total Transactions</strong></td>
-                                    <td class="amount"><strong>${transactions.size}</strong></td>
-                                    <td style="text-align: center;"><strong>📈 Records</strong></td>
-                                </tr>
-                            </table>
-                        </div>
-                        
-                        <div class="info-section">
-                            <h3>📋 Transaction Details</h3>
-                            <table class="transaction-table">
-                                <tr>
-                                    <th>Date</th>
-                                    <th>TZS Received</th>
-                                    <th>CNY Given</th>
-                                   
-                                    <th>Exchange Rate</th>
-                                    <th>Net TZS</th>
-                                    <th>Net Foreign</th>
-                                    
-                                </tr>
-            """)
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Currency Exchange Report - $partnerName</title>
+                <style>
+                    body { 
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                        margin: 30px; 
+                        background-color: #f8f9fa;
+                        color: #030303;
+                        font-weight: bold;
+                        line-height: 1.6;
+                    }
+                    .container {
+                        background-color: white;
+                        padding: 30px;
+                        border-radius: 8px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }
+                    .header { 
+                        text-align: center; 
+                        margin-bottom: 40px; 
+                        border-bottom: 3px solid #007bff;
+                        padding-bottom: 20px;
+                    }
+                    .header h1 {
+                        color: #007bff;
+                        margin-bottom: 10px;
+                        font-size: 28px;
+                    }
+                    .header h2 {
+                        color: #495057;
+                        margin-bottom: 5px;
+                        font-size: 20px;
+                    }
+                    .info-section { 
+                        margin-bottom: 30px; 
+                    }
+                    .info-section h3 {
+                        color: #007bff;
+                        border-bottom: 2px solid #e9ecef;
+                        padding-bottom: 5px;
+                        margin-bottom: 15px;
+                    }
+                    .summary-table, .transaction-table { 
+                        width: 100%; 
+                        border-collapse: collapse; 
+                        margin-bottom: 20px;
+                        font-size: 14px;
+                    }
+                    th, td { 
+                        border: 1px solid #dee2e6; 
+                        padding: 12px 8px; 
+                        text-align: left; 
+                    }
+                    th { 
+                        background-color: #007bff; 
+                        color: white;
+                        font-weight: bold; 
+                        text-align: center;
+                    }
+                    .amount { color: #030303; font-weight: bold; text-align: right; font-family: 'Calibri', monospace; }
+                    .positive { color: #28a745; font-weight: bold; }
+                    .negative { color: #dc3545; font-weight: bold; }
+                    .total-row { 
+                        background-color: #e3f2fd; 
+                        font-weight: bold; 
+                    }
+                    .daily-summary-row {
+                        background-color: #fff3cd;
+                        font-weight: bold;
+                        font-style: italic;
+                    }
+                    .cumulative-summary-row {
+                        background-color: #d1ecf1;
+                        font-weight: bold;
+                        font-style: italic;
+                    }
+                    .currency-cell {
+                        text-align: center;
+                        font-weight: bold;
+                        background-color: #f8f9fa;
+                    }
+                    .date-cell {
+                        font-family: 'Courier New', monospace;
+                        background-color: #f8f9fa;
+                    }
+                    @media print {
+                        body { margin: 0; background-color: white; }
+                        .container { box-shadow: none; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>💰 Currency Exchange Report</h1>
+                        <h2>Client: $partnerName</h2>
+                        <p><strong>Date Range:</strong> ${dateFormat.format(startDate)} - ${dateFormat.format(endDate)}</p>
+                        <p><strong>Generated:</strong> ${dateTimeFormat.format(Date())}</p>
+                    </div>
+                    
+                    <div class="info-section">
+                        <h3>📊 Summary</h3>
+                        <table class="summary-table">
+                            <tr><th>Currency</th><th>Net Position</th><th>Status</th></tr>
+                            <tr class="${if (summary.totalNetTzs >= 0) "positive" else "negative"}">
+                                <td class="currency-cell">TZS</td>
+                                <td class="amount ${if (summary.totalNetTzs >= 0) "positive" else "negative"}">${formatNumber(summary.totalNetTzs)}</td>
+                                <td style="text-align: center;">${if (summary.totalNetTzs >= 0) "✅ Credit" else "❌ Debit"}</td>
+                            </tr>
+                            <tr class="${if (summary.totalNetCny >= 0) "positive" else "negative"}">
+                                <td class="currency-cell">CNY</td>
+                                <td class="amount ${if (summary.totalNetCny >= 0) "positive" else "negative"}">${formatNumber(summary.totalNetCny)}</td>
+                                <td style="text-align: center;">${if (summary.totalNetCny >= 0) "✅ Credit" else "❌ Debit"}</td>
+                            </tr>
+                            <tr class="${if (summary.totalNetUsdt >= 0) "positive" else "negative"}">
+                                <td class="currency-cell">USDT</td>
+                                <td class="amount ${if (summary.totalNetUsdt >= 0) "positive" else "negative"}">${formatNumber(summary.totalNetUsdt)}</td>
+                                <td style="text-align: center;">${if (summary.totalNetUsdt >= 0) "✅ Credit" else "❌ Debit"}</td>
+                            </tr>
+                            <tr class="total-row">
+                                <td><strong>Total Transactions</strong></td>
+                                <td class="amount"><strong>${transactions.size}</strong></td>
+                                <td style="text-align: center;"><strong>📈 Records</strong></td>
+                            </tr>
+                        </table>
+                    </div>
+                    
+                    <div class="info-section">
+                        <h3>📋 Transaction Details</h3>
+                        <table class="transaction-table">
+                            <tr>
+                                <th>Date</th>
+                                <th>TZS Received</th>
+                                <th>Foreign Amount</th>
+                                <th>Currency</th>
+                                <th>Exchange Rate</th>
+                                <th>Net TZS</th>
+                            </tr>
+        """)
 
             if (transactions.isEmpty()) {
                 append("""
-                    <tr>
-                        <td colspan="8" style="text-align: center; padding: 30px; color: #6c757d; font-style: italic;">
-                            No transactions found in the selected date range
-                        </td>
-                    </tr>
-                """)
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 30px; color: #6c757d; font-style: italic;">
+                        No transactions found in the selected date range
+                    </td>
+                </tr>
+            """)
             } else {
-                transactions.sortedBy { it.date }.forEach { transaction ->
-                    append("""
+                // Group transactions by date
+                val transactionsByDate = transactions.groupBy {
+                    dateFormat.format(it.date)
+                }.toSortedMap(compareBy {
+                    dateFormat.parse(it)
+                })
+
+                // Variables for cumulative calculations
+                var cumulativeTzsReceived = 0.0
+                var cumulativeNetTzs = 0.0
+
+                transactionsByDate.forEach { (dateString, dayTransactions) ->
+                    // Calculate daily totals
+                    val dailyTzsReceived = dayTransactions.sumOf { it.tzsReceived }
+                    val dailyNetTzs = dayTransactions.sumOf { transaction ->
+                        // Net TZS = Foreign Amount * Exchange Rate
+                        transaction.foreignGiven * transaction.exchangeRate
+                    }
+
+                    // Get the last transaction's exchange rate for the day
+                    val lastTransactionRate = dayTransactions.lastOrNull()?.exchangeRate ?: 1.0
+                    val lastTransactionCurrency = dayTransactions.lastOrNull()?.foreignCurrency ?: "CNY"
+
+                    // Calculate daily net and net foreign
+                    val dailyNet = dailyTzsReceived - dailyNetTzs
+                    val dailyNetForeign = if (lastTransactionRate > 0) dailyNet / lastTransactionRate else 0.0
+
+                    // Update cumulative totals
+                    cumulativeTzsReceived += dailyTzsReceived
+                    cumulativeNetTzs += dailyNetTzs
+                    val cumulativeNet = cumulativeTzsReceived - cumulativeNetTzs
+                    val cumulativeNetForeign = if (lastTransactionRate > 0) cumulativeNet / lastTransactionRate else 0.0
+
+                    // Add individual transactions for this date
+                    dayTransactions.sortedBy { it.date }.forEach { transaction ->
+                        val netTzs = transaction.foreignGiven * transaction.exchangeRate
+                        append("""
                         <tr>
                             <td class="date-cell">${dateFormat.format(transaction.date)}</td>
                             <td class="amount">${formatNumber(transaction.tzsReceived)}</td>
                             <td class="amount">${formatNumber(transaction.foreignGiven)}</td>
-                            
+                            <td class="currency-cell">${transaction.foreignCurrency}</td>
                             <td class="amount">${formatNumber(transaction.exchangeRate)}</td>
-                            <td class="amount ${if (transaction.netTzs >= 0) "positive" else "negative"}">${formatNumber(transaction.netTzs)}</td>
-                            <td class="amount ${if (transaction.netForeign >= 0) "positive" else "negative"}">${formatNumber(transaction.netForeign)}</td>
-                            
+                            <td class="amount ${if (netTzs >= 0) "positive" else "negative"}">${formatNumber(netTzs)}</td>
                         </tr>
                     """)
+                    }
+
+                    // Add daily summary row
+                    append("""
+                    <tr class="daily-summary-row">
+                        <td class="date-cell"><strong>📅 Daily Total ($dateString)</strong></td>
+                        <td class="amount"><strong>${formatNumber(dailyTzsReceived)}</strong></td>
+                        <td class="amount ${if (dailyNetForeign >= 0) "positive" else "negative"}"><strong>${formatNumber(dailyNetForeign)}</strong></td>
+                        <td class="currency-cell"><strong>$lastTransactionCurrency</strong></td>
+                        <td class="amount"><strong>${formatNumber(lastTransactionRate)}</strong></td>
+                        <td class="amount ${if (dailyNet >= 0) "positive" else "negative"}"><strong>${formatNumber(dailyNet)}</strong></td>
+                    </tr>
+                """)
+
+                    // Add cumulative summary row
+                    append("""
+                    <tr class="cumulative-summary-row">
+                        <td class="date-cell"><strong>📊 Cumulative Total (through $dateString)</strong></td>
+                        <td class="amount"><strong>${formatNumber(cumulativeTzsReceived)}</strong></td>
+                        <td class="amount ${if (cumulativeNetForeign >= 0) "positive" else "negative"}"><strong>${formatNumber(cumulativeNetForeign)}</strong></td>
+                        <td class="currency-cell"><strong>$lastTransactionCurrency</strong></td>
+                        <td class="amount"><strong>${formatNumber(lastTransactionRate)}</strong></td>
+                        <td class="amount ${if (cumulativeNet >= 0) "positive" else "negative"}"><strong>${formatNumber(cumulativeNet)}</strong></td>
+                    </tr>
+                """)
                 }
             }
 
             append("""
-                            </table>
-                        </div>
-                        
-                        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center; color: #6c757d; font-size: 12px;">
-                            <p></p>
-                            <p>Generated by Currency Exchange App • ${dateTimeFormat.format(Date())}</p>
-                        </div>
+                        </table>
                     </div>
-                </body>
-                </html>
-            """)
+                    
+                    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center; color: #6c757d; font-size: 12px;">
+                       
+                        
+                        <p>Generated time • ${dateTimeFormat.format(Date())}</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        """)
         }
 
         outputStream.write(htmlContent.toByteArray(Charsets.UTF_8))
@@ -502,72 +565,84 @@ class MainViewModel @Inject constructor(
         summary: PartnerSummary
     ) {
         // Generate CSV format that Excel can open with proper formatting
-        val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-        val dateTimeFormat = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
+        val dateFormat = SimpleDateFormat("dd-MMM-yyyy", Locale.getDefault()) // Changed to avoid commas
+        val dateTimeFormat = SimpleDateFormat("dd-MMM-yyyy HH:mm", Locale.getDefault()) // Changed to avoid commas
 
         val csvContent = buildString {
+            // Helper function to format numbers with commas
+            fun formatNumber(number: Double): String {
+                val formatted = String.format("%.2f", number)
+                val parts = formatted.split(".")
+                val integerPart = parts[0]
+                val decimalPart = if (parts.size > 1) parts[1] else "00"
+
+                // Handle negative sign
+                val isNegative = integerPart.startsWith("-")
+                val absoluteIntegerPart = if (isNegative) integerPart.substring(1) else integerPart
+
+                // Add commas to integer part
+                val formattedInteger = if (absoluteIntegerPart.length > 3) {
+                    absoluteIntegerPart.reversed().chunked(3).joinToString(",").reversed()
+                } else {
+                    absoluteIntegerPart
+                }
+
+                val sign = if (isNegative) "-" else ""
+                return "$sign$formattedInteger.$decimalPart"
+            }
             // Header information
             appendLine("Currency Exchange Report")
             appendLine("Partner,$partnerName")
-            appendLine("Date Range,${dateFormat.format(startDate)} - ${dateFormat.format(endDate)}")
+            appendLine("Date Range,${dateFormat.format(startDate)} to ${dateFormat.format(endDate)}")
             appendLine("Generated on,${dateTimeFormat.format(Date())}")
             appendLine() // Empty line
 
-            // Summary section
+            // Enhanced Summary section with formulas
             appendLine("SUMMARY")
-            appendLine("Currency,Net Position,Status")
-            appendLine("TZS,${summary.totalNetTzs},${if (summary.totalNetTzs >= 0) "Credit" else "Debit"}")
-            appendLine("CNY,${summary.totalNetCny},${if (summary.totalNetCny >= 0) "Credit" else "Debit"}")
-            appendLine("USDT,${summary.totalNetUsdt},${if (summary.totalNetUsdt >= 0) "Credit" else "Debit"}")
+            appendLine("Currency,Net Position Formula,Status")
+
+            // Find the last exchange rates for CNY and USDT
+            val lastCnyRate = transactions.filter { it.foreignCurrency == "CNY" }.firstOrNull()?.exchangeRate ?: 376.0
+            val lastUsdtRate = transactions.filter { it.foreignCurrency == "USDT" }.firstOrNull()?.exchangeRate ?: 2380.0
+
+            // Calculate the starting row for transaction data (header info + summary + headers = approximately row 11)
+            val dataStartRow = 15
+            val dataEndRow = dataStartRow + transactions.size - 1
+
+            appendLine("TZS,\"=SUMIF(D$dataStartRow:D$dataEndRow,\"\"CNY\"\",B$dataStartRow:B$dataEndRow)+SUMIF(D$dataStartRow:D$dataEndRow,\"\"USD\"\",B$dataStartRow:B$dataEndRow)-(SUMIF(D$dataStartRow:D$dataEndRow,\"\"CNY\"\",F$dataStartRow:F$dataEndRow)+SUMIF(D$dataStartRow:D$dataEndRow,\"\"USD\"\",F$dataStartRow:F$dataEndRow))\",${if (summary.totalNetTzs >= 0) "Credit" else "Debit"}")
+            appendLine("CNY,\"=(SUMIF(D$dataStartRow:D$dataEndRow,\"\"CNY\"\",B$dataStartRow:B$dataEndRow)-SUMIF(D$dataStartRow:D$dataEndRow,\"\"CNY\"\",F$dataStartRow:F$dataEndRow))/$lastCnyRate\",${if (summary.totalNetCny >= 0) "Credit" else "Debit"}")
+            appendLine("USD,\"=(SUMIF(D$dataStartRow:D$dataEndRow,\"\"USD\"\",B$dataStartRow:B$dataEndRow)-SUMIF(D$dataStartRow:D$dataEndRow,\"\"USD\"\",F$dataStartRow:F$dataEndRow))/$lastUsdtRate\",${if (summary.totalNetUsdt >= 0) "Credit" else "Debit"}")
             appendLine("Total Transactions,${transactions.size},Records")
             appendLine() // Empty line
 
-            // Transaction details header
+            // Transaction details header (6 columns only)
             appendLine("TRANSACTION DETAILS")
-            appendLine("Date,TZS Received,Foreign Given,Currency,Exchange Rate,Net TZS,Net Foreign,Notes")
+            appendLine("Date,TZS Received,Foreign Amount,Currency,Exchange Rate,Net TZS")
 
-            // Transaction data
+            // Transaction data (continuous, no daily/cumulative summaries)
             if (transactions.isEmpty()) {
-                appendLine("No transactions found in selected date range,,,,,,")
+                appendLine("No transactions found in selected date range,,,,,")
             } else {
                 transactions.sortedBy { it.date }.forEach { transaction ->
-                    val notes = transaction.notes.replace("\"", "\"\"") // Escape quotes for CSV
-                    appendLine("${dateFormat.format(transaction.date)},${transaction.tzsReceived},${transaction.foreignGiven},${transaction.foreignCurrency},${transaction.exchangeRate},${transaction.netTzs},${transaction.netForeign},\"$notes\"")
+                    // Calculate Net TZS as (Foreign Amount × Exchange Rate)
+                    val netTzs = transaction.foreignGiven * transaction.exchangeRate
+                    appendLine("${dateFormat.format(transaction.date)},${transaction.tzsReceived},${transaction.foreignGiven},${transaction.foreignCurrency},${transaction.exchangeRate},$netTzs")
                 }
             }
 
             appendLine() // Empty line
 
-            // Formulas section with explanations
-            appendLine("EXCEL FORMULAS (Copy these to Excel cells for automatic calculations)")
-            appendLine("Description,Formula,Explanation")
-            appendLine("Total TZS Received,\"=SUMIF(D:D,\"\"CNY\"\",B:B)+SUMIF(D:D,\"\"USDT\"\",B:B)\",Sum TZS received from all currencies")
-            appendLine("Total CNY Given,\"=SUMIF(D:D,\"\"CNY\"\",C:C)\",Sum all CNY given")
-            appendLine("Total USDT Given,\"=SUMIF(D:D,\"\"USDT\"\",C:C)\",Sum all USDT given")
-            appendLine("Net TZS Position,\"=SUM(F:F)\",Sum of all net TZS amounts")
-            appendLine("Net CNY Position,\"=SUMIF(D:D,\"\"CNY\"\",G:G)\",Sum net foreign amounts for CNY")
-            appendLine("Net USDT Position,\"=SUMIF(D:D,\"\"USDT\"\",G:G)\",Sum net foreign amounts for USDT")
-            appendLine("Average Exchange Rate CNY,\"=AVERAGEIF(D:D,\"\"CNY\"\",E:E)\",Average CNY exchange rate")
-            appendLine("Average Exchange Rate USDT,\"=AVERAGEIF(D:D,\"\"USDT\"\",E:E)\",Average USDT exchange rate")
-            appendLine("Transaction Count,\"=COUNTA(A:A)-9\",Count of transaction rows (minus headers)")
+            // Enhanced formulas section
+
+
+            appendLine("Transaction Count,\"=COUNTA(A$dataStartRow:A$dataEndRow)\",Count of transaction rows")
+
+
 
             appendLine()
-            appendLine("QUICK ANALYSIS")
-            appendLine("Best CNY Rate,\"=MAX(IF(D:D=\"\"CNY\"\",E:E))\",Highest CNY rate received")
-            appendLine("Worst CNY Rate,\"=MIN(IF(D:D=\"\"CNY\"\",E:E))\",Lowest CNY rate received")
-            appendLine("Best USDT Rate,\"=MAX(IF(D:D=\"\"USDT\"\",E:E))\",Highest USDT rate received")
-            appendLine("Worst USDT Rate,\"=MIN(IF(D:D=\"\"USDT\"\",E:E))\",Lowest USDT rate received")
-            appendLine("Largest Transaction,\"=MAX(B:B)\",Largest TZS amount received")
-            appendLine("Smallest Transaction,\"=MIN(IF(B:B>0,B:B))\",Smallest TZS amount received")
 
-            appendLine()
-            appendLine("NOTES:")
-            appendLine("1. This CSV file opens perfectly in Microsoft Excel")
-            appendLine("2. Copy the formulas above into Excel cells for automatic calculations")
-            appendLine("3. Use array formulas (Ctrl+Shift+Enter) for complex formulas if needed")
-            appendLine("4. Data rows start from row 9 in the Transaction Details section")
-            appendLine("5. Positive values = Credit (money owed to you)")
-            appendLine("6. Negative values = Debit (money you owe)")
+
+
         }
 
         outputStream.write(csvContent.toByteArray(Charsets.UTF_8))
